@@ -49,6 +49,15 @@ db.exec(`
     media_path TEXT,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
   );
+  CREATE TABLE IF NOT EXISTS templates (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    rubric TEXT NOT NULL,
+    content TEXT NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+  CREATE INDEX IF NOT EXISTS idx_templates_rubric ON templates(rubric);
 `);
 
 const adminExists = db.prepare('SELECT id FROM users WHERE username = ?').get(ADMIN_USER);
@@ -254,6 +263,38 @@ app.post('/api/post/vk', auth, async (req, res) => {
   }
 });
 
+// ═══════ TEMPLATES ═══════
+app.get('/api/templates', auth, (req, res) => {
+  const { rubric } = req.query;
+  let rows;
+  if (rubric) {
+    rows = db.prepare('SELECT * FROM templates WHERE rubric = ? ORDER BY updated_at DESC').all(rubric);
+  } else {
+    rows = db.prepare('SELECT * FROM templates ORDER BY rubric, updated_at DESC').all();
+  }
+  res.json(rows);
+});
+
+app.post('/api/templates', auth, (req, res) => {
+  const { name, rubric, content } = req.body;
+  if (!name || !rubric || !content) return res.status(400).json({ error: 'name, rubric, content required' });
+  const result = db.prepare('INSERT INTO templates (name, rubric, content) VALUES (?, ?, ?)').run(name, rubric, content);
+  res.json({ ok: true, id: result.lastInsertRowid });
+});
+
+app.put('/api/templates/:id', auth, (req, res) => {
+  const { name, content } = req.body;
+  const id = parseInt(req.params.id);
+  db.prepare('UPDATE templates SET name = ?, content = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(name, content, id);
+  res.json({ ok: true });
+});
+
+app.delete('/api/templates/:id', auth, (req, res) => {
+  const id = parseInt(req.params.id);
+  db.prepare('DELETE FROM templates WHERE id = ?').run(id);
+  res.json({ ok: true });
+});
+
 // ═══════ HISTORY ═══════
 app.get('/api/posts', auth, (req, res) => {
   const posts = db.prepare('SELECT * FROM posts ORDER BY created_at DESC LIMIT 100').all();
@@ -265,7 +306,7 @@ app.get('*', (req, res) => {
 });
 
 app.listen(PORT, '0.0.0.0', () => {
-  console.log(`\n  Hard Locals Content Ops v6`);
+  console.log(`\n  Hard Locals Content Ops v6.1 (templates)`);
   console.log(`  → http://0.0.0.0:${PORT}`);
   console.log(`  → Anthropic: ${ANTHROPIC_API_KEY ? '✓' : '✗'}`);
   console.log(`  → TG Bot: ${TG_BOT_TOKEN ? '✓' : '✗'}`);

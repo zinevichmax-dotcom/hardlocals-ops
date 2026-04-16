@@ -293,6 +293,10 @@ var imgPickedS=useS(null);
 var historyOpenS=useS(false);
 var historyListS=useS([]);
 var historyLoadingS=useS(false);
+var templatesS=useS([]);
+var templatesOpenS=useS(false);
+var saveTemplateOpenS=useS(false);
+var saveTemplateNameS=useS("");
 var taR=useR(null);
 
 var token=tokenS[0],setToken=tokenS[1];
@@ -328,6 +332,10 @@ var imgPicked=imgPickedS[0],setImgPicked=imgPickedS[1];
 var historyOpen=historyOpenS[0],setHistoryOpen=historyOpenS[1];
 var historyList=historyListS[0],setHistoryList=historyListS[1];
 var historyLoading=historyLoadingS[0],setHistoryLoading=historyLoadingS[1];
+var templates=templatesS[0],setTemplates=templatesS[1];
+var templatesOpen=templatesOpenS[0],setTemplatesOpen=templatesOpenS[1];
+var saveTemplateOpen=saveTemplateOpenS[0],setSaveTemplateOpen=saveTemplateOpenS[1];
+var saveTemplateName=saveTemplateNameS[0],setSaveTemplateName=saveTemplateNameS[1];
 
 var rub=null;
 for(var i=0;i<RUBRICS.length;i++){if(RUBRICS[i].id===sel)rub=RUBRICS[i]}
@@ -347,7 +355,25 @@ if(r.token){localStorage.setItem("token",r.token);setToken(r.token);setAuthed(tr
 setLoginB(false);
 }).catch(function(e){setLoginE(String(e.message||e));setLoginB(false)})}
 
-function pickRubric(id){setSel(id);setFields({});setText("");setError("");setPostMsg("");setBlocks(null);setBanner(null);setBannerOpen(false);setImgSearch(false);setAttachedMedia(null)}
+function pickRubric(id){setSel(id);setFields({});setText("");setError("");setPostMsg("");setBlocks(null);setBanner(null);setBannerOpen(false);setImgSearch(false);setAttachedMedia(null);loadTemplates(id)}
+
+function loadTemplates(rubric){
+fetch("/api/templates?rubric="+encodeURIComponent(rubric),{headers:{Authorization:"Bearer "+token}}).then(function(r){return r.json()}).then(function(d){setTemplates(Array.isArray(d)?d:[])}).catch(function(){setTemplates([])});
+}
+
+function applyTemplate(tpl){setText(tpl.content);setTemplatesOpen(false)}
+
+function saveAsTemplate(){
+if(!saveTemplateName.trim()||!text||!rub)return;
+fetch("/api/templates",{method:"POST",headers:{"Content-Type":"application/json",Authorization:"Bearer "+token},body:JSON.stringify({name:saveTemplateName.trim(),rubric:rub.id,content:text})}).then(function(r){return r.json()}).then(function(){
+setSaveTemplateOpen(false);setSaveTemplateName("");loadTemplates(rub.id);
+});
+}
+
+function deleteTemplate(id){
+if(!confirm("Удалить шаблон?"))return;
+fetch("/api/templates/"+id,{method:"DELETE",headers:{Authorization:"Bearer "+token}}).then(function(){loadTemplates(rub.id)});
+}
 
 function parseIntoBlocks(txt){
 var parts=txt.split(/\n\n+/);var header="",footer="",items=[];
@@ -537,6 +563,44 @@ h("div",{className:"history-text"},(post.content||"").slice(0,400)+(post.content
 
 return h("div",{className:"app"},
 historyModal,
+templatesOpen?h("div",{className:"modal-backdrop",onClick:function(e){if(e.target===e.currentTarget)setTemplatesOpen(false)}},
+h("div",{className:"modal"},
+h("div",{className:"modal-head"},
+h("div",null,h("div",{className:"modal-title"},"Шаблоны рубрики"),h("div",{className:"modal-sub"},rub?rub.name+" · "+templates.length+" шаблонов":"")),
+h("button",{onClick:function(){setTemplatesOpen(false)},className:"btn-ghost"},"Закрыть")
+),
+h("div",{className:"modal-body"},
+templates.length===0?h("div",{style:{textAlign:"center",color:"var(--text-dim)",padding:40,fontSize:12}},"Пока нет шаблонов. Сгенерируй пост и сохрани его."):
+templates.map(function(tpl){return h("div",{key:tpl.id,className:"history-item"},
+h("div",{className:"history-meta"},
+h("span",{style:{fontSize:13,fontWeight:600,color:"var(--text)"}},tpl.name),
+h("span",{style:{fontSize:10,color:"var(--text-dim)",marginLeft:"auto"}},new Date(tpl.updated_at).toLocaleDateString("ru-RU")),
+h("button",{onClick:function(){applyTemplate(tpl)},className:"btn-ghost",style:{padding:"4px 10px",fontSize:10,color:"var(--accent)"}},"\u21A9 Применить"),
+h("button",{onClick:function(){deleteTemplate(tpl.id)},className:"btn-ghost",style:{padding:"4px 10px",fontSize:10,color:"var(--danger)"}},"\u2715")
+),
+h("div",{className:"history-text"},(tpl.content||"").slice(0,300)+(tpl.content&&tpl.content.length>300?"...":""))
+)})
+)
+)
+):null,
+saveTemplateOpen?h("div",{className:"modal-backdrop",onClick:function(e){if(e.target===e.currentTarget){setSaveTemplateOpen(false);setSaveTemplateName("")}}},
+h("div",{className:"modal",style:{maxWidth:440}},
+h("div",{className:"modal-head"},
+h("div",null,h("div",{className:"modal-title"},"Сохранить как шаблон"),h("div",{className:"modal-sub"},"Для рубрики "+(rub?rub.name:""))),
+h("button",{onClick:function(){setSaveTemplateOpen(false);setSaveTemplateName("")},className:"btn-ghost"},"Закрыть")
+),
+h("div",{className:"modal-body"},
+h("div",{className:"field"},
+h("div",{className:"field-label"},"Название шаблона"),
+h("input",{value:saveTemplateName,onChange:function(e){setSaveTemplateName(e.target.value)},onKeyDown:function(e){if(e.key==="Enter")saveAsTemplate()},placeholder:"Например: Анонс Питер",className:"input",autoFocus:true})
+),
+h("div",{className:"actions"},
+h("button",{onClick:saveAsTemplate,disabled:!saveTemplateName.trim(),className:"btn-primary accent"},"\u{1F4BE} Сохранить"),
+h("button",{onClick:function(){setSaveTemplateOpen(false);setSaveTemplateName("")},className:"btn-secondary"},"Отмена")
+)
+)
+)
+):null,
 h("div",{className:"header"},
 h("div",{className:"header-left"},
 h("button",{onClick:function(){setSidebar(!sidebar)},className:"menu-btn"},"\u2630"),
@@ -561,7 +625,10 @@ h("span",{className:"rubric-icon-s"},r.icon),h("span",{className:"rubric-name-s"
 h("div",{className:"content"},
 h("div",{className:"rubric-header"},
 h("div",{className:"rubric-title"},h("div",{className:"rubric-title-icon"},rub.icon),h("div",null,h("div",{className:"rubric-title-text"},rub.name),h("div",{className:"rubric-title-sub"},rub.desc))),
+h("div",{style:{display:"flex",gap:8,alignItems:"center"}},
+templates.length>0?h("button",{onClick:function(){setTemplatesOpen(true)},className:"header-btn",style:{color:"var(--accent)",borderColor:"rgba(232,93,31,0.3)"}},"\u{1F4C4} Шаблоны ("+templates.length+")"):null,
 h("div",{className:"rubric-freq-badge"},rub.freq)
+)
 ),
 h("div",{className:"work"},
 h("div",{className:"work-inner"},
@@ -633,7 +700,10 @@ error?h("div",{className:"error-box"},error):null,
 text?h("div",{className:"result-card"},
 h("div",{className:"result-head"},
 h("span",{className:"result-label"},"Сгенерированный пост"),
-attachedMedia?h("span",{className:"tool-badge"},"\u{1F4CE} С медиа"):null
+h("div",{style:{display:"flex",gap:8,alignItems:"center"}},
+attachedMedia?h("span",{className:"tool-badge"},"\u{1F4CE} С медиа"):null,
+h("button",{onClick:function(){setSaveTemplateOpen(true)},className:"btn-ghost",style:{padding:"5px 10px",fontSize:10}},"\u{1F4BE} Сохранить как шаблон")
+)
 ),
 h("div",{className:"result-body"},h("textarea",{ref:taR,value:text,onChange:function(ev){setText(ev.target.value)},className:"result-textarea"})),
 blocks?h("div",{className:"panel",style:{margin:"0 22px 16px"}},
