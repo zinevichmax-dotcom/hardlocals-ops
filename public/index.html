@@ -361,6 +361,7 @@ var videoDownloadingS=useS(false);
 var statsS=useS(null);
 var statsOpenS=useS(false);
 var pendingDraftIdS=useS(null);
+var batchGeneratingS=useS(false);
 var taR=useR(null);
 
 var token=tokenS[0],setToken=tokenS[1];
@@ -418,6 +419,7 @@ var videoDownloading=videoDownloadingS[0],setVideoDownloading=videoDownloadingS[
 var stats=statsS[0],setStats=statsS[1];
 var statsOpen=statsOpenS[0],setStatsOpen=statsOpenS[1];
 var pendingDraftId=pendingDraftIdS[0],setPendingDraftId=pendingDraftIdS[1];
+var batchGenerating=batchGeneratingS[0],setBatchGenerating=batchGeneratingS[1];
 
 var rub=null;
 for(var i=0;i<RUBRICS.length;i++){if(RUBRICS[i].id===sel)rub=RUBRICS[i]}
@@ -867,9 +869,25 @@ var weekStr=fmt(ws);
 if(!confirm("Сгенерировать контент-план на неделю с "+weekStr+"?"))return;
 apiCall("/api/scheduled/generate-week",{week_start:weekStr},token).then(function(d){
 if(d.error){alert(d.error);return}
-alert("Создано "+d.count+" черновиков! Открой Календарь — там всё.");
+alert("Создано "+d.count+" черновиков!");
 loadScheduled();
 });
+}
+
+function batchGenerateContent(){
+var ws=calendarWeekStart;
+var fmt=function(d){var m=d.getMonth()+1;var dd=d.getDate();return d.getFullYear()+"-"+(m<10?"0":"")+m+"-"+(dd<10?"0":"")+dd};
+var weekStr=fmt(ws);
+if(!confirm("AI сгенерирует тексты для ВСЕХ пустых черновиков на этой неделе. Это может занять 1-2 минуты. Продолжить?"))return;
+setBatchGenerating(true);
+apiCall("/api/scheduled/batch-generate",{week_start:weekStr},token).then(function(d){
+setBatchGenerating(false);
+if(d.error){alert(d.error);return}
+var msg="Сгенерировано: "+d.count+"/"+d.total;
+if(d.errors&&d.errors.length>0)msg+="\nОшибки: "+d.errors.length;
+alert(msg);
+loadScheduled();
+}).catch(function(e){setBatchGenerating(false);alert("Ошибка: "+e.message)});
 }
 
 function approvePost(sched){
@@ -1139,6 +1157,7 @@ h("div",{className:"modal-head"},
 h("div",null,h("div",{className:"modal-title"},"\u{1F4C5} Контент-календарь"),h("div",{className:"modal-sub"},"Планирование публикаций")),
 h("div",{style:{display:"flex",gap:6,alignItems:"center"}},
 h("button",{onClick:generateWeekPlan,className:"btn-primary accent",style:{padding:"7px 14px",fontSize:11}},"\u{1F4C5} План на неделю"),
+h("button",{onClick:batchGenerateContent,disabled:batchGenerating,className:"btn-primary",style:{padding:"7px 14px",fontSize:11,background:batchGenerating?"var(--bg-elev)":"rgba(74,222,128,0.15)",color:batchGenerating?"var(--text-dim)":"#4ade80",border:"1px solid rgba(74,222,128,0.3)"}},batchGenerating?"\u23F3 Генерирую...":"\u2728 Сгенерировать всё"),
 h("button",{onClick:function(){var d=new Date(calendarWeekStart);d.setDate(d.getDate()-7);setCalendarWeekStart(d);setTimeout(loadScheduled,50)},className:"btn-ghost"},"\u2190"),
 h("button",{onClick:function(){var d=new Date();var day=d.getDay();var diff=d.getDate()-day+(day===0?-6:1);var m=new Date(d);m.setDate(diff);m.setHours(0,0,0,0);setCalendarWeekStart(m);setTimeout(loadScheduled,50)},className:"btn-ghost"},"Сегодня"),
 h("button",{onClick:function(){var d=new Date(calendarWeekStart);d.setDate(d.getDate()+7);setCalendarWeekStart(d);setTimeout(loadScheduled,50)},className:"btn-ghost"},"\u2192"),

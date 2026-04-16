@@ -1160,6 +1160,113 @@ app.post('/api/scheduled/generate-week', auth, async (req, res) => {
   res.json({ ok: true, count: inserted.length, slots: inserted });
 });
 
+// Batch-generate content for all empty drafts in a date range
+app.post('/api/scheduled/batch-generate', auth, async (req, res) => {
+  const { week_start } = req.body;
+  if (!week_start) return res.status(400).json({ error: 'week_start required' });
+
+  const endDate = new Date(week_start + 'T00:00:00');
+  endDate.setDate(endDate.getDate() + 6);
+  const endStr = endDate.toISOString().slice(0, 10);
+
+  const drafts = db.prepare(`
+    SELECT * FROM scheduled
+    WHERE scheduled_date >= ? AND scheduled_date <= ?
+    AND status = 'draft'
+    AND (content IS NULL OR content = '')
+    ORDER BY scheduled_date, scheduled_time
+  `).all(week_start, endStr);
+
+  if (drafts.length === 0) return res.json({ ok: true, count: 0, message: 'Все черновики уже заполнены' });
+
+  console.log(`[BATCH] Generating content for ${drafts.length} drafts`);
+  const members = db.prepare('SELECT * FROM members').all();
+  let generated = 0;
+  const errors = [];
+
+  for (const draft of drafts) {
+    try {
+      let prompt = '';
+      const dayOfWeek = ['вс','пн','вт','ср','чт','пт','сб'][new Date(draft.scheduled_date + 'T12:00:00').getDay()];
+      const daysToSeason = Math.ceil((new Date('2026-05-23') - new Date(draft.scheduled_date)) / (86400000));
+
+      switch (draft.rubric) {
+        case 'birthday': {
+          const name = (draft.title || '').replace('ДР: ', '');
+          const m = members.find(x => x.name === name || x.nickname === name);
+          prompt = `Пост-поздравление ДР участника мотоклуба Hard Locals. Имя: ${name}${m ? ', байк: ' + (m.bike || '?') : ''}. 3-5 предложений, тёплый, с мото-метафорами, на "ты".`;
+          break;
+        }
+        case 'humor':
+          prompt = `Короткий мото-юмор для TG (${dayOfWeek}). 1-2 предложения, ирония, дружеский тон, 1-2 emoji.`;
+          break;
+        case 'kind_reminder':
+          prompt = 'Напоминание о безопасности. Одна тема (экипировка/скорость/ТО/погода/усталость). 3-4 предложения, забота не нотация.';
+          break;
+        case 'cross_promo':
+          prompt = 'Напоминание о соцсетях: TG t.me/hardlocals, VK vk.com/hardlocals.russia, Insta @hardlocals, сайт hardlocals.club. 2-3 предложения.';
+          break;
+        case 'merch':
+          prompt = 'Мерч Hard Locals. Заказ: t.me/casual_pumpkin, каталог: hardlocals.club/#shop. 3-4 предложения, сезон начинается.';
+          break;
+        case 'values':
+          prompt = 'Ценности/философия клуба. Одна тема (братство/свобода/дорога/уважение). 4-6 предложений, глубоко без пафоса.';
+          break;
+        case 'riddle':
+          prompt = 'Мото-шарада. Загадка 2-3 строки + ответ в <tg-spoiler>ответ</tg-spoiler>.';
+          break;
+        case 'season_opening':
+          prompt = `Открытие сезона 23 мая 2026, осталось ${daysToSeason} дней. 3-4 предложения, энергия, обратный отсчёт.`;
+          break;
+        case 'route_series':
+          prompt = 'Анонс мотомаршрута выходного дня из Москвы (200-400 км). Куда, зачем, что смотреть, расстояние. 4-6 предложений.';
+          break;
+        case 'trip_announce':
+          prompt = 'Анонс ближайшей поездки. Дата, маршрут, время сбора, что взять. 4-5 предложений, призыв.';
+          break;
+        case 'season_calendar':
+          prompt = 'Календарь сезона 2026: 1.Открытие-май, 2.Оптина Пустынь, 3.Питер, 4.Burning Wheels, 5.Суздаль, 6.Нилова Пустынь, 7.Нижний Новгород, 8.Biker Brothers, 9.Кострома, 10.Крым. Список с эмодзи, вступление, призыв.';
+          break;
+        case 'moto_news':
+          prompt = 'Дайджест 3-4 мотоновости. Каждая: emoji + <b>заголовок</b> + 1-2 предложения. Финал: ссылка на канал t.me/hardlocals.';
+          break;
+        default:
+          prompt = `Пост для рубрики "${draft.rubric}". Тема: ${draft.title || 'на выбор'}. ${draft.notes || ''}. 3-5 предложений.`;
+      }
+
+      const apiRes = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-api-key': ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01' },
+        body: JSON.stringify({
+          model: 'claude-sonnet-4-20250514',
+          max_tokens: 600,
+          system: 'Ты копирайтер мотоклуба Hard Locals (Москва). Коротко, по-мужски, на "ты". HTML для Telegram (<b>, <i>, <a href>). Без markdown. Без хэштегов.',
+          messages: [{ role: 'user', content: prompt }],
+        }),
+      });
+      const data = await apiRes.json();
+      let text = '';
+      if (data.content) { for (const c of data.content) { if (c.type === 'text') text += c.text; } }
+      text = text.trim();
+
+      if (text) {
+        db.prepare('UPDATE scheduled SET content = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(text, draft.id);
+        generated++;
+        console.log(`[BATCH] #${draft.id} ${draft.rubric}: ${text.length} chars`);
+      } else {
+        errors.push({ id: draft.id, rubric: draft.rubric, error: 'Empty' });
+      }
+      await new Promise(r => setTimeout(r, 300));
+    } catch (e) {
+      console.error(`[BATCH] Error #${draft.id}:`, e.message);
+      errors.push({ id: draft.id, rubric: draft.rubric, error: e.message });
+    }
+  }
+
+  console.log(`[BATCH] Done: ${generated}/${drafts.length}`);
+  res.json({ ok: true, count: generated, total: drafts.length, errors });
+});
+
 // ═══════ HISTORY ═══════
 app.get('/api/posts', auth, (req, res) => {
   const posts = db.prepare('SELECT * FROM posts ORDER BY created_at DESC LIMIT 100').all();
@@ -1232,7 +1339,7 @@ app.get('*', (req, res) => {
 });
 
 app.listen(PORT, '0.0.0.0', () => {
-  console.log(`\n  Hard Locals Content Ops v8.2 (calendar UX: content editor, past days, indicators)`);
+  console.log(`\n  Hard Locals Content Ops v8.3 (batch content generation + calendar UX)`);
   console.log(`  → http://0.0.0.0:${PORT}`);
   console.log(`  → Anthropic: ${ANTHROPIC_API_KEY ? '✓' : '✗'}`);
   console.log(`  → TG Bot: ${TG_BOT_TOKEN ? '✓' : '✗'}`);
