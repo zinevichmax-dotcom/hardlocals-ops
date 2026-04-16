@@ -343,35 +343,78 @@ app.post('/api/post/telegram', auth, async (req, res) => {
 
 // ═══════ VK POSTING ═══════
 
-// Helper: upload one photo to VK and return "photo{owner_id}_{photo_id}"
+// VK album cache (find or create "Auto-uploads" album)
+let vkAlbumId = null;
+
+async function vkGetOrCreateAlbum() {
+  if (vkAlbumId) return vkAlbumId;
+  const ALBUM_TITLE = 'HL Ops Auto';
+
+  // Find existing
+  const getRes = await fetch(
+    `https://api.vk.com/method/photos.getAlbums?owner_id=-${VK_GROUP_ID}&access_token=${VK_ACCESS_TOKEN}&v=5.199`
+  );
+  const getData = await getRes.json();
+  if (getData.response && getData.response.items) {
+    const found = getData.response.items.find(a => a.title === ALBUM_TITLE);
+    if (found) {
+      vkAlbumId = found.id;
+      console.log('[VK] Using existing album', vkAlbumId);
+      return vkAlbumId;
+    }
+  }
+
+  // Create new
+  const createParams = new URLSearchParams({
+    group_id: VK_GROUP_ID,
+    title: ALBUM_TITLE,
+    description: 'Авто-загрузки из Hard Locals Ops',
+    upload_by_admins_only: '1',
+    comments_disabled: '1',
+    access_token: VK_ACCESS_TOKEN,
+    v: '5.199',
+  });
+  const createRes = await fetch(`https://api.vk.com/method/photos.createAlbum?${createParams}`);
+  const createData = await createRes.json();
+  if (!createData.response) throw new Error('VK createAlbum: ' + (createData.error?.error_msg || 'unknown'));
+  vkAlbumId = createData.response.id;
+  console.log('[VK] Created album', vkAlbumId);
+  return vkAlbumId;
+}
+
+// Upload photo via album (works with community token)
 async function vkUploadPhoto(filePath) {
-  // 1. Get upload server
+  const albumId = await vkGetOrCreateAlbum();
+
+  // 1. Get upload server for album
   const uploadServerRes = await fetch(
-    `https://api.vk.com/method/photos.getWallUploadServer?group_id=${VK_GROUP_ID}&access_token=${VK_ACCESS_TOKEN}&v=5.199`
+    `https://api.vk.com/method/photos.getUploadServer?group_id=${VK_GROUP_ID}&album_id=${albumId}&access_token=${VK_ACCESS_TOKEN}&v=5.199`
   );
   const uploadServer = await uploadServerRes.json();
-  if (!uploadServer.response) throw new Error('VK getWallUploadServer: ' + (uploadServer.error?.error_msg || 'unknown'));
+  if (!uploadServer.response) throw new Error('VK getUploadServer: ' + (uploadServer.error?.error_msg || 'unknown'));
 
-  // 2. Upload file
+  // 2. Upload file (field name for album = file1)
   const fd = new FormData();
   const buf = readFileSync(filePath);
-  fd.append('photo', new Blob([buf]), 'photo.jpg');
+  fd.append('file1', new Blob([buf]), 'photo.jpg');
   const uploadRes = await fetch(uploadServer.response.upload_url, { method: 'POST', body: fd });
   const uploaded = await uploadRes.json();
-  if (!uploaded.photo || uploaded.photo === '[]') throw new Error('VK upload: empty photo response');
+  if (!uploaded.photos_list) throw new Error('VK upload: no photos_list in response');
 
   // 3. Save
   const saveParams = new URLSearchParams({
     group_id: VK_GROUP_ID,
+    album_id: String(albumId),
     server: String(uploaded.server),
-    photo: uploaded.photo,
+    photos_list: uploaded.photos_list,
     hash: uploaded.hash,
     access_token: VK_ACCESS_TOKEN,
     v: '5.199',
   });
-  const saveRes = await fetch(`https://api.vk.com/method/photos.saveWallPhoto?${saveParams}`);
+  if (uploaded.aid) saveParams.set('aid', String(uploaded.aid));
+  const saveRes = await fetch(`https://api.vk.com/method/photos.save?${saveParams}`);
   const saved = await saveRes.json();
-  if (!saved.response || !saved.response[0]) throw new Error('VK saveWallPhoto: ' + (saved.error?.error_msg || 'unknown'));
+  if (!saved.response || !saved.response[0]) throw new Error('VK photos.save: ' + (saved.error?.error_msg || 'unknown'));
   const p = saved.response[0];
   return `photo${p.owner_id}_${p.id}`;
 }
@@ -821,7 +864,7 @@ app.get('*', (req, res) => {
 });
 
 app.listen(PORT, '0.0.0.0', () => {
-  console.log(`\n  Hard Locals Content Ops v7.5 (VK autoposting with media)`);
+  console.log(`\n  Hard Locals Content Ops v7.5.1 (VK via album upload)`);
   console.log(`  → http://0.0.0.0:${PORT}`);
   console.log(`  → Anthropic: ${ANTHROPIC_API_KEY ? '✓' : '✗'}`);
   console.log(`  → TG Bot: ${TG_BOT_TOKEN ? '✓' : '✗'}`);
