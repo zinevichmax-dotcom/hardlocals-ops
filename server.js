@@ -384,9 +384,10 @@ app.delete('/api/members/:id', auth, (req, res) => {
 
 // ═══════ RSS FEED ═══════
 const RSS_SOURCES = [
-  { name: 'Motor.ru', url: 'https://motor.ru/exports/rss.xml' },
   { name: 'Motogonki', url: 'https://motogonki.ru/rss.xml' },
   { name: '110km', url: 'https://110km.ru/rss/news/' },
+  { name: 'Motor Моно', url: 'https://motor.ru/rss/moto.xml' },
+  { name: 'Motor.ru', url: 'https://motor.ru/exports/rss.xml' },
   { name: 'RBC Авто', url: 'https://rssexport.rbc.ru/rbcnews/auto/30/full.rss' },
 ];
 
@@ -437,7 +438,7 @@ async function fetchRSS() {
       const itemRegex = /<item>([\s\S]*?)<\/item>/gi;
       let m;
       let count = 0;
-      while ((m = itemRegex.exec(text)) !== null && count < 10) {
+      while ((m = itemRegex.exec(text)) !== null && count < 20) {
         const item = parseRSSItem(m[1]);
         if (item.title && item.link) {
           allItems.push({ ...item, source: src.name });
@@ -446,13 +447,38 @@ async function fetchRSS() {
       }
     } catch (e) { console.error('RSS error', src.name, e.message); }
   }));
-  // Sort by date desc
-  allItems.sort((a, b) => {
+
+  // Filter: only motorcycle-related
+  const MOTO_KEYWORDS = [
+    'мото', 'мотоцик', 'байк', 'байкер', 'эндуро', 'скутер', 'чоппер',
+    'Harley', 'Honda', 'Yamaha', 'Kawasaki', 'Suzuki', 'Ducati', 'BMW Motorrad',
+    'KTM', 'Triumph', 'Aprilia', 'MV Agusta', 'Indian', 'Royal Enfield',
+    'MotoGP', 'Dakar', 'Superbike', 'Урал ', 'Иж ', 'Минск',
+    'шлем', 'экипировк', 'Ridez', 'racer',
+    'motorcycle', 'motorbike', 'scooter', 'biker',
+  ];
+  // Exclude obviously non-moto
+  const EXCLUDE = [
+    'автомобил', 'легков', 'грузовик', 'кроссовер', 'внедорожник',
+    'седан', 'хэтчбек', 'хетчбек', 'универсал',
+  ];
+
+  const motoItems = allItems.filter(item => {
+    const haystack = ((item.title || '') + ' ' + (item.description || '')).toLowerCase();
+    const hasMoto = MOTO_KEYWORDS.some(kw => haystack.includes(kw.toLowerCase()));
+    if (!hasMoto) return false;
+    // But if mostly about cars, skip
+    const exCount = EXCLUDE.filter(kw => haystack.includes(kw)).length;
+    const moCount = MOTO_KEYWORDS.filter(kw => haystack.includes(kw.toLowerCase())).length;
+    return moCount >= exCount;
+  });
+
+  motoItems.sort((a, b) => {
     const da = a.pubDate ? new Date(a.pubDate).getTime() : 0;
     const dbb = b.pubDate ? new Date(b.pubDate).getTime() : 0;
     return dbb - da;
   });
-  return allItems.slice(0, 30);
+  return motoItems.slice(0, 30);
 }
 
 app.get('/api/rss', auth, async (req, res) => {
@@ -509,7 +535,7 @@ app.get('*', (req, res) => {
 });
 
 app.listen(PORT, '0.0.0.0', () => {
-  console.log(`\n  Hard Locals Content Ops v6.6 (RSS feed + calendar)`);
+  console.log(`\n  Hard Locals Content Ops v6.7 (moto-only RSS)`);
   console.log(`  → http://0.0.0.0:${PORT}`);
   console.log(`  → Anthropic: ${ANTHROPIC_API_KEY ? '✓' : '✗'}`);
   console.log(`  → TG Bot: ${TG_BOT_TOKEN ? '✓' : '✗'}`);
