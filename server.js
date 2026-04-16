@@ -120,8 +120,12 @@ try {
 // Checks every 5 minutes for posts with status='ready' and scheduled_date+time <= now
 async function runScheduler() {
   const now = new Date();
-  const todayStr = now.toISOString().slice(0, 10); // YYYY-MM-DD
-  const timeStr = now.toTimeString().slice(0, 5);   // HH:MM
+  // Use local time (respects TZ env var)
+  const y = now.getFullYear();
+  const mo = String(now.getMonth() + 1).padStart(2, '0');
+  const da = String(now.getDate()).padStart(2, '0');
+  const todayStr = `${y}-${mo}-${da}`;
+  const timeStr = String(now.getHours()).padStart(2, '0') + ':' + String(now.getMinutes()).padStart(2, '0');
 
   const readyPosts = db.prepare(`
     SELECT * FROM scheduled
@@ -130,7 +134,7 @@ async function runScheduler() {
   `).all(todayStr, todayStr, timeStr);
 
   if (readyPosts.length === 0) return;
-  console.log(`[SCHEDULER] Found ${readyPosts.length} posts to publish`);
+  console.log(`[SCHEDULER] ${todayStr} ${timeStr} — Found ${readyPosts.length} posts to publish`);
 
   for (const post of readyPosts) {
     try {
@@ -1234,5 +1238,8 @@ app.listen(PORT, '0.0.0.0', () => {
   console.log(`  → TG Bot: ${TG_BOT_TOKEN ? '✓' : '✗'}`);
   console.log(`  → VK: ${VK_ACCESS_TOKEN ? '✓' : '✗'}${VK_ALBUM_ID ? ' (album: ' + VK_ALBUM_ID + ')' : ' (no album)'}`);
   console.log(`  → Unsplash: ${UNSPLASH_KEY ? '✓' : '✗'}`);
-  console.log(`  → Pexels: ${PEXELS_KEY ? '✓' : '✗'}\n`);
+  console.log(`  → Pexels: ${PEXELS_KEY ? '✓' : '✗'}`);
+  console.log(`  → TZ: ${process.env.TZ || 'UTC (add TZ=Europe/Moscow to .env!)'}`);
+  const nowLocal = new Date();
+  console.log(`  → Server time: ${nowLocal.toLocaleString('ru-RU')}\n`);
 });
