@@ -1146,13 +1146,32 @@ app.post('/api/scheduled/generate-week', auth, async (req, res) => {
     }
   }
 
+  // Filter out slots in the past (today's past hours)
+  const nowHour = new Date().getHours();
+  const nowTime = String(nowHour).padStart(2, '0') + ':' + String(new Date().getMinutes()).padStart(2, '0');
+  const finalSlots = newSlots.filter(s => {
+    if (s.date === todayStr && s.time <= nowTime) return false;
+    return true;
+  });
+
+  // Auto-attach member photo for birthday posts
+  for (const slot of finalSlots) {
+    if (slot.rubric === 'birthday') {
+      const name = (slot.title || '').replace('ДР: ', '');
+      const member = allMembers.find(m => m.name === name || m.nickname === name);
+      if (member && member.photo_path) {
+        slot.media_path = member.photo_path;
+      }
+    }
+  }
+
   // Insert all as drafts
   const insertStmt = db.prepare(
-    'INSERT INTO scheduled (scheduled_date, scheduled_time, rubric, title, notes, content, status) VALUES (?, ?, ?, ?, ?, ?, ?)'
+    'INSERT INTO scheduled (scheduled_date, scheduled_time, rubric, title, notes, content, media_path, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
   );
   const inserted = [];
-  for (const slot of newSlots) {
-    const r = insertStmt.run(slot.date, slot.time, slot.rubric, slot.title, slot.auto_context || '', null, 'draft');
+  for (const slot of finalSlots) {
+    const r = insertStmt.run(slot.date, slot.time, slot.rubric, slot.title, slot.auto_context || '', null, slot.media_path || null, 'draft');
     inserted.push({ id: r.lastInsertRowid, ...slot });
   }
 
@@ -1339,7 +1358,7 @@ app.get('*', (req, res) => {
 });
 
 app.listen(PORT, '0.0.0.0', () => {
-  console.log(`\n  Hard Locals Content Ops v8.3 (batch content generation + calendar UX)`);
+  console.log(`\n  Hard Locals Content Ops v8.4 (skip past hours + calendar media + auto birthday photo)`);
   console.log(`  → http://0.0.0.0:${PORT}`);
   console.log(`  → Anthropic: ${ANTHROPIC_API_KEY ? '✓' : '✗'}`);
   console.log(`  → TG Bot: ${TG_BOT_TOKEN ? '✓' : '✗'}`);

@@ -1214,6 +1214,25 @@ scheduledEdit.content?h("span",{style:{fontSize:10,color:"var(--success)"}},sche
 ),
 h("textarea",{className:"textarea",style:{minHeight:120,fontSize:12,fontFamily:"var(--f-mono)"},placeholder:"Текст будет здесь после генерации. Можешь писать вручную.",value:scheduledEdit.content||"",onChange:function(e){setScheduledEdit(Object.assign({},scheduledEdit,{content:e.target.value}))}})
 ),
+// MEDIA ATTACHMENT
+h("div",{className:"field"},
+h("div",{className:"field-label"},"\u{1F4F7} Медиа"),
+scheduledEdit.media_path?h("div",{style:{display:"flex",alignItems:"center",gap:10,marginBottom:8}},
+h("img",{src:scheduledEdit.media_path,style:{width:60,height:60,borderRadius:8,objectFit:"cover"}}),
+h("span",{style:{fontSize:11,color:"var(--text-dim)",flex:1}},scheduledEdit.media_path.split("/").pop()),
+h("button",{onClick:function(){setScheduledEdit(Object.assign({},scheduledEdit,{media_path:null}))},style:{background:"transparent",border:"none",color:"var(--danger)",cursor:"pointer",fontSize:12}},"\u2715 Убрать")
+):null,
+h("label",{style:{display:"inline-flex",alignItems:"center",gap:6,padding:"8px 14px",background:"var(--bg)",border:"1px solid var(--line-soft)",borderRadius:8,cursor:"pointer",fontSize:11}},
+"\u{1F4CE} Загрузить фото/видео",
+h("input",{type:"file",accept:"image/*,video/*",style:{display:"none"},onChange:function(e){
+var file=e.target.files[0];if(!file)return;
+var fd=new FormData();fd.append("file",file);
+fetch("/api/upload",{method:"POST",headers:{Authorization:"Bearer "+token},body:fd}).then(function(r){return r.json()}).then(function(d){
+if(d.path){setScheduledEdit(Object.assign({},scheduledEdit,{media_path:d.path}))}
+});e.target.value=""
+}})
+)
+),
 h("div",{className:"actions",style:{flexWrap:"wrap"}},
 h("button",{onClick:function(){saveScheduled(Object.assign({},scheduledEdit,{items:typeof scheduledEdit.items==="string"?JSON.parse(scheduledEdit.items||"[]"):(scheduledEdit.items||[])}))},disabled:!scheduledEdit.scheduled_date||!scheduledEdit.rubric,className:"btn-primary accent"},"\u{1F4BE} Сохранить"),
 scheduledEdit.status==="draft"?h("button",{onClick:function(){generateDraftContent(scheduledEdit)},className:"btn-primary",style:{background:"var(--bg-elev)",color:"var(--text)"}},"\u2728 Сгенерировать текст"):null,
