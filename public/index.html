@@ -360,6 +360,7 @@ var collectedUrlsS=useS([]);
 var videoDownloadingS=useS(false);
 var statsS=useS(null);
 var statsOpenS=useS(false);
+var pendingDraftIdS=useS(null);
 var taR=useR(null);
 
 var token=tokenS[0],setToken=tokenS[1];
@@ -416,6 +417,7 @@ var collectedUrls=collectedUrlsS[0],setCollectedUrls=collectedUrlsS[1];
 var videoDownloading=videoDownloadingS[0],setVideoDownloading=videoDownloadingS[1];
 var stats=statsS[0],setStats=statsS[1];
 var statsOpen=statsOpenS[0],setStatsOpen=statsOpenS[1];
+var pendingDraftId=pendingDraftIdS[0],setPendingDraftId=pendingDraftIdS[1];
 
 var rub=null;
 for(var i=0;i<RUBRICS.length;i++){if(RUBRICS[i].id===sel)rub=RUBRICS[i]}
@@ -610,7 +612,7 @@ if(r.token){localStorage.setItem("token",r.token);setToken(r.token);setAuthed(tr
 setLoginB(false);
 }).catch(function(e){setLoginE(String(e.message||e));setLoginB(false)})}
 
-function pickRubric(id){setSel(id);setFields({});setText("");setError("");setPostMsg("");setBlocks(null);setBanner(null);setBannerOpen(false);setImgSearch(false);setAttachedMediaList([]);loadTemplates(id)}
+function pickRubric(id){setSel(id);setFields({});setText("");setError("");setPostMsg("");setBlocks(null);setBanner(null);setBannerOpen(false);setImgSearch(false);setAttachedMediaList([]);setPendingDraftId(null);loadTemplates(id)}
 
 function loadTemplates(rubric){
 fetch("/api/templates?rubric="+encodeURIComponent(rubric),{headers:{Authorization:"Bearer "+token}}).then(function(r){return r.json()}).then(function(d){setTemplates(Array.isArray(d)?d:[])}).catch(function(){setTemplates([])});
@@ -874,17 +876,27 @@ fetch("/api/scheduled/"+sched.id,{method:"PUT",headers:{"Content-Type":"applicat
 }
 
 function generateDraftContent(sched){
-// AI generates content for a draft based on rubric + title + notes
 var rb=null;for(var i=0;i<RUBRICS.length;i++){if(RUBRICS[i].id===sched.rubric)rb=RUBRICS[i]}
 if(!rb){alert("Рубрика не найдена");return}
-// Navigate to rubric editor with context
 pickRubric(sched.rubric);
 setTimeout(function(){
-if(sched.notes)setFields(function(prev){var o=Object.assign({},prev);if(rb.fields&&rb.fields[0])o[rb.fields[0].k]=sched.notes;return o});
+if(sched.notes){
+var firstFieldKey=rb.fields&&rb.fields[0]?rb.fields[0].k:null;
+if(firstFieldKey){var o={};o[firstFieldKey]=sched.notes;setFields(o)}
+}
 setCalendarOpen(false);
-// Store draft ID so we can save back after generation
-window._pendingDraftId=sched.id;
+setPendingDraftId(sched.id);
 },50);
+}
+
+function saveDraftToCalendar(){
+if(!pendingDraftId||!text)return;
+var mediaPaths=attachedMediaList&&attachedMediaList.length>0?attachedMediaList.map(function(m){return m.path}).join(","):null;
+apiCall("/api/scheduled/"+pendingDraftId+"/content",{content:text,media_path:mediaPaths},token).then(function(d){
+if(d.error){alert(d.error);return}
+setPendingDraftId(null);
+alert("Текст сохранён в календарь! Открой запись и поставь «В очередь» для автопубликации.");
+});
 }
 
 function pickImgAsAttachment(url){
@@ -1478,6 +1490,7 @@ text?h("div",{className:"result-card"},
 h("div",{className:"result-head"},
 h("span",{className:"result-label"},"Сгенерированный пост"),
 h("div",{style:{display:"flex",gap:8,alignItems:"center"}},
+pendingDraftId?h("span",{style:{padding:"4px 10px",fontSize:10,background:"rgba(74,222,128,0.15)",color:"#4ade80",border:"1px solid rgba(74,222,128,0.3)",borderRadius:6,fontWeight:600}},"\u{1F4C5} Для календаря"):null,
 attachedMediaList&&attachedMediaList.length>0?h("span",{className:"tool-badge"},"\u{1F4CE} Медиа: "+attachedMediaList.length):null,
 h("button",{onClick:function(){setSaveTemplateOpen(true)},className:"btn-ghost",style:{padding:"5px 10px",fontSize:10}},"\u{1F4BE} Сохранить как шаблон")
 )
@@ -1532,6 +1545,7 @@ h("div",{className:"preview-counter"+(overLimit?" over":"")},String(pt.length)+"
 ),
 h("div",{className:"copy-row"},PLATS.map(function(p){return h("button",{key:p.id,onClick:function(){copyFor(p.id)},className:"copy-btn"+(copied===p.id?" copied":"")},copied===p.id?"\u2713 "+p.name:"\u2192 "+p.name)})),
 h("div",{className:"post-row"},
+pendingDraftId&&text?h("button",{onClick:saveDraftToCalendar,className:"post-btn",style:{color:"#4ade80",borderColor:"rgba(74,222,128,0.4)",background:"rgba(74,222,128,0.08)",fontWeight:700}},"\u{1F4BE} В календарь"):null,
 PLATS.filter(function(p){return p.canPost}).map(function(p){return h("button",{key:p.id,onClick:function(){postTo(p.id)},disabled:posting!=="",className:"post-btn",style:{color:p.color,borderColor:p.color+"44"}},posting===p.id?"Отправка...":"\u26A1 "+p.name+(attachedMediaList&&attachedMediaList.length>0?" + \u{1F4CE}"+(attachedMediaList.length>1?"\u00D7"+attachedMediaList.length:""):""))}),
 postMsg?h("span",{className:"post-status "+(postMsg==="ok"?"ok":"err")},postMsg==="ok"?"\u2713 Отправлено":postMsg):null
 )

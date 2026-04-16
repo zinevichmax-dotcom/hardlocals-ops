@@ -983,6 +983,15 @@ app.delete('/api/scheduled/:id', auth, (req, res) => {
   res.json({ ok: true });
 });
 
+// Save generated content back to a scheduled draft
+app.post('/api/scheduled/:id/content', auth, (req, res) => {
+  const id = parseInt(req.params.id);
+  const { content, media_path } = req.body;
+  db.prepare('UPDATE scheduled SET content = ?, media_path = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?')
+    .run(content || null, media_path || null, id);
+  res.json({ ok: true });
+});
+
 // Generate weekly content plan
 app.post('/api/scheduled/generate-week', auth, async (req, res) => {
   const { week_start } = req.body; // YYYY-MM-DD of Monday
@@ -1180,7 +1189,7 @@ app.get('*', (req, res) => {
 });
 
 app.listen(PORT, '0.0.0.0', () => {
-  console.log(`\n  Hard Locals Content Ops v8.0 (auto-scheduler + weekly plan generator)`);
+  console.log(`\n  Hard Locals Content Ops v8.0.1 (scheduler + plan + save-to-calendar flow)`);
   console.log(`  → http://0.0.0.0:${PORT}`);
   console.log(`  → Anthropic: ${ANTHROPIC_API_KEY ? '✓' : '✗'}`);
   console.log(`  → TG Bot: ${TG_BOT_TOKEN ? '✓' : '✗'}`);
