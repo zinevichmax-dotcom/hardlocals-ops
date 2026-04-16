@@ -43,8 +43,13 @@ const ROUTES = [
   { n: 10, name: 'Крым', date: '2026-09-21', km: null, days: 7, desc: 'Не тур. Не отпуск. Мотопаломничество. Серпантин, море, горы и бесконечная дорога. Крым нельзя проехать — его нужно прожить на мотоцикле.' },
 ];
 
+// Helper: format Date as YYYY-MM-DD in LOCAL timezone (respects TZ env)
+function fmtLocal(d) {
+  return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
+}
+
 function getNextRoute() {
-  const today = new Date().toISOString().slice(0, 10);
+  const today = fmtLocal(new Date());
   const future = ROUTES.filter(r => r.date && r.date >= today).sort((a, b) => a.date.localeCompare(b.date));
   return future[0] || ROUTES.filter(r => r.date).pop() || ROUTES[0];
 }
@@ -52,7 +57,7 @@ function getNextRoute() {
 function getRouteForWeek(weekDate) {
   const wStart = new Date(weekDate);
   const wEnd = new Date(wStart); wEnd.setDate(wEnd.getDate() + 21);
-  const upcoming = ROUTES.filter(r => r.date && r.date >= weekDate && r.date <= wEnd.toISOString().slice(0, 10)).sort((a, b) => a.date.localeCompare(b.date));
+  const upcoming = ROUTES.filter(r => r.date && r.date >= weekDate && r.date <= fmtLocal(wEnd)).sort((a, b) => a.date.localeCompare(b.date));
   return upcoming[0] || getNextRoute();
 }
 
@@ -1068,7 +1073,7 @@ app.post('/api/scheduled/generate-week', auth, async (req, res) => {
   // Gather context
   const startDate = new Date(week_start + 'T00:00:00');
   const endDate = new Date(startDate); endDate.setDate(endDate.getDate() + 6);
-  const fmt = (d) => d.toISOString().slice(0, 10);
+  const fmt = fmtLocal;
 
   // 1. Upcoming birthdays this week
   const allMembers = db.prepare('SELECT * FROM members').all();
@@ -1314,7 +1319,7 @@ app.post('/api/scheduled/batch-generate', auth, async (req, res) => {
 
   const endDate = new Date(week_start + 'T00:00:00');
   endDate.setDate(endDate.getDate() + 6);
-  const endStr = endDate.toISOString().slice(0, 10);
+  const endStr = fmtLocal(endDate);
 
   const drafts = db.prepare(`
     SELECT * FROM scheduled
@@ -1439,7 +1444,7 @@ app.post('/api/scheduled/approve-all', auth, (req, res) => {
   if (!week_start) return res.status(400).json({ error: 'week_start required' });
   const endDate = new Date(week_start + 'T00:00:00');
   endDate.setDate(endDate.getDate() + 6);
-  const endStr = endDate.toISOString().slice(0, 10);
+  const endStr = fmtLocal(endDate);
 
   const result = db.prepare(`
     UPDATE scheduled SET status = 'ready', updated_at = CURRENT_TIMESTAMP
@@ -1461,7 +1466,7 @@ app.post('/api/scheduled/run-now', auth, async (req, res) => {
 
 // ═══════ ROUTES API ═══════
 app.get('/api/routes', auth, (req, res) => {
-  const progress = getSeasonProgress(new Date().toISOString().slice(0, 10));
+  const progress = getSeasonProgress(fmtLocal(new Date()));
   res.json(progress);
 });
 
@@ -1542,7 +1547,7 @@ app.get('*', (req, res) => {
 });
 
 app.listen(PORT, '0.0.0.0', () => {
-  console.log(`\n  Hard Locals Content Ops v9.3 (shop catalog 15 items + smart merch prompts)`);
+  console.log(`\n  Hard Locals Content Ops v9.4 (fix all UTC→local timezone bugs)`);
   console.log(`  → http://0.0.0.0:${PORT}`);
   console.log(`  → Anthropic: ${ANTHROPIC_API_KEY ? '✓' : '✗'}`);
   console.log(`  → TG Bot: ${TG_BOT_TOKEN ? '✓' : '✗'}`);
