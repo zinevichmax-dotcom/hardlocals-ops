@@ -236,16 +236,20 @@ app.post('/api/post/telegram', auth, async (req, res) => {
     let result;
     if (media_path && existsSync(join(__dirname, media_path.replace(/^\//, '')))) {
       const filePath = join(__dirname, media_path.replace(/^\//, ''));
+      const TG_CAPTION_LIMIT = 1024;
+      if (text && text.length > TG_CAPTION_LIMIT) {
+        console.log('[TG] Rejected: caption', text.length, '> limit', TG_CAPTION_LIMIT);
+        return res.status(400).json({ error: `Пост слишком длинный для отправки с картинкой: ${text.length}/${TG_CAPTION_LIMIT} символов. Сократи текст или открепи медиа.` });
+      }
       console.log('[TG] Sending with media:', filePath);
+      const isVideo = media_path.match(/\.(mp4|mov|avi|webm)$/i);
+      const fileBuffer = readFileSync(filePath);
       const formData = new FormData();
       formData.append('chat_id', TG_CHANNEL_ID);
       formData.append('caption', text);
       formData.append('parse_mode', 'HTML');
-
-      const fileBuffer = readFileSync(filePath);
       const blob = new Blob([fileBuffer]);
-
-      if (media_path.match(/\.(mp4|mov|avi|webm)$/i)) {
+      if (isVideo) {
         formData.append('video', blob, 'video.mp4');
         result = await fetch(`${apiBase}/sendVideo`, { method: 'POST', body: formData });
       } else {
@@ -633,6 +637,21 @@ app.put('/api/scheduled/:id', auth, (req, res) => {
   res.json({ ok: true });
 });
 
+// Return list of URLs currently present in any non-sent scheduled post
+app.get('/api/scheduled/collected-urls', auth, (req, res) => {
+  const rows = db.prepare("SELECT items FROM scheduled WHERE status != 'sent' AND items IS NOT NULL").all();
+  const urls = new Set();
+  for (const row of rows) {
+    try {
+      const items = JSON.parse(row.items);
+      for (const it of items) {
+        if (it && it.link) urls.add(it.link);
+      }
+    } catch (e) {}
+  }
+  res.json(Array.from(urls));
+});
+
 // Add an item (news link) to a scheduled post
 app.post('/api/scheduled/:id/items', auth, (req, res) => {
   const id = parseInt(req.params.id);
@@ -661,7 +680,7 @@ app.get('*', (req, res) => {
 });
 
 app.listen(PORT, '0.0.0.0', () => {
-  console.log(`\n  Hard Locals Content Ops v7.1 (digest collector + block swap + single news)`);
+  console.log(`\n  Hard Locals Content Ops v7.2 (collected status + home + caption guard + pulsing UI)`);
   console.log(`  → http://0.0.0.0:${PORT}`);
   console.log(`  → Anthropic: ${ANTHROPIC_API_KEY ? '✓' : '✗'}`);
   console.log(`  → TG Bot: ${TG_BOT_TOKEN ? '✓' : '✗'}`);

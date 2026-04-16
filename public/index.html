@@ -96,7 +96,11 @@ a{color:inherit;text-decoration:none}
 .error-box{margin-top:14px;padding:12px 16px;background:rgba(239,68,68,0.08);border:1px solid rgba(239,68,68,0.2);border-radius:8px;color:#FCA5A5;font-size:12px}
 .warning-box{margin-top:14px;padding:12px 16px;background:rgba(245,158,11,0.08);border:1px solid rgba(245,158,11,0.2);border-radius:8px;color:#FCD34D;font-size:12px}
 
-.media-attached-bar{margin-top:14px;padding:12px 16px;background:linear-gradient(90deg,rgba(232,93,31,0.1) 0%,rgba(232,93,31,0.03) 100%);border:1px solid rgba(232,93,31,0.3);border-radius:10px;display:flex;align-items:center;gap:12px}
+.media-attached-bar{margin-top:14px;padding:12px 16px;background:linear-gradient(90deg,rgba(232,93,31,0.12) 0%,rgba(232,93,31,0.04) 100%);border:2px solid var(--accent);border-radius:10px;display:flex;align-items:center;gap:12px;animation:attachedBarPulse 2s 2}
+@keyframes attachedBarPulse{
+  0%,100%{box-shadow:0 0 0 0 rgba(232,93,31,0)}
+  50%{box-shadow:0 0 0 6px rgba(232,93,31,0.25)}
+}
 .media-attached-thumb{width:44px;height:44px;border-radius:6px;object-fit:cover;flex-shrink:0}
 .media-attached-info{flex:1}
 .media-attached-title{font-size:12px;font-weight:600;color:var(--accent);margin-bottom:2px}
@@ -169,6 +173,18 @@ a{color:inherit;text-decoration:none}
 .image-item img{width:100%;height:100%;object-fit:cover;display:block}
 .image-author{position:absolute;bottom:0;left:0;right:0;padding:4px 8px;background:linear-gradient(180deg,transparent,rgba(0,0,0,0.8));font-size:9px;color:rgba(255,255,255,0.7)}
 .banner-preview{width:100%;border-radius:8px;margin-top:12px;border:1px solid var(--line);display:block}
+
+@keyframes attachPulse{
+  0%,100%{box-shadow:0 0 0 0 rgba(232,93,31,0.7),0 10px 30px -10px var(--accent-glow)}
+  50%{box-shadow:0 0 0 10px rgba(232,93,31,0),0 10px 30px -10px var(--accent-glow)}
+}
+.btn-attach-pulse{
+  animation:attachPulse 1.8s infinite;
+  padding:14px 28px !important;
+  font-size:14px !important;
+  font-weight:700 !important;
+  letter-spacing:0.02em;
+}
 
 .login{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px}
 .login-card{width:100%;max-width:380px;padding:40px 36px;background:linear-gradient(180deg,var(--bg-card) 0%,var(--bg-elev) 100%);border:1px solid var(--line);border-radius:16px;box-shadow:0 40px 80px -20px rgba(0,0,0,0.6)}
@@ -310,6 +326,7 @@ var calendarWeekStartS=useS(function(){var d=new Date();var day=d.getDay();var d
 var digestPickerS=useS(null);
 var singleNewsS=useS(null);
 var blockSwapIdxS=useS(-1);
+var collectedUrlsS=useS([]);
 var taR=useR(null);
 
 var token=tokenS[0],setToken=tokenS[1];
@@ -362,6 +379,7 @@ var calendarWeekStart=calendarWeekStartS[0],setCalendarWeekStart=calendarWeekSta
 var digestPicker=digestPickerS[0],setDigestPicker=digestPickerS[1];
 var singleNews=singleNewsS[0],setSingleNews=singleNewsS[1];
 var blockSwapIdx=blockSwapIdxS[0],setBlockSwapIdx=blockSwapIdxS[1];
+var collectedUrls=collectedUrlsS[0],setCollectedUrls=collectedUrlsS[1];
 
 var rub=null;
 for(var i=0;i<RUBRICS.length;i++){if(RUBRICS[i].id===sel)rub=RUBRICS[i]}
@@ -369,8 +387,12 @@ var curPlat=null;
 for(var i=0;i<PLATS.length;i++){if(PLATS[i].id===plat)curPlat=PLATS[i]}
 
 useE(function(){
-if(token){apiCall("/api/auth/check",{},token).then(function(r){if(r.ok){setAuthed(true);loadUpcomingBdays();loadRSS()}else{localStorage.removeItem("token");setToken("")}}).catch(function(){localStorage.removeItem("token");setToken("")})}
+if(token){apiCall("/api/auth/check",{},token).then(function(r){if(r.ok){setAuthed(true);loadUpcomingBdays();loadRSS();loadCollectedUrls()}else{localStorage.removeItem("token");setToken("")}}).catch(function(){localStorage.removeItem("token");setToken("")})}
 },[token]);
+
+function loadCollectedUrls(){
+fetch("/api/scheduled/collected-urls",{headers:{Authorization:"Bearer "+token}}).then(function(r){return r.json()}).then(function(d){setCollectedUrls(Array.isArray(d)?d:[])}).catch(function(){});
+}
 
 function loadRSS(force){
 setRssLoading(true);
@@ -402,6 +424,7 @@ setDigestPicker({item:item,digests:digests});
 function addItemToDigest(digestId,item){
 fetch("/api/scheduled/"+digestId+"/items",{method:"POST",headers:{"Content-Type":"application/json",Authorization:"Bearer "+token},body:JSON.stringify(item)}).then(function(r){return r.json()}).then(function(){
 setDigestPicker(null);
+loadCollectedUrls();
 });
 }
 
@@ -414,6 +437,7 @@ var fmt=function(dt){var m=dt.getMonth()+1;var dd=dt.getDate();return dt.getFull
 var body={scheduled_date:fmt(d),rubric:"moto_news",title:"Дайджест мотоновостей",notes:"",content:"",items:[item]};
 fetch("/api/scheduled",{method:"POST",headers:{"Content-Type":"application/json",Authorization:"Bearer "+token},body:JSON.stringify(body)}).then(function(r){return r.json()}).then(function(){
 setDigestPicker(null);
+loadCollectedUrls();
 });
 }
 
@@ -424,10 +448,10 @@ function singleNewsToPost(item){setSingleNews(item);pickRubric("moto_news");setT
 function generateFromItems(sched){
 if(!sched.items||sched.items.length===0){alert("Сначала собери новости в этот дайджест");return}
 var items=sched.items;
-var itemsText=items.map(function(it,i){return(i+1)+". "+it.title+"\n   Источник: "+it.link+(it.description?"\n   Краткое: "+it.description:"")}).join("\n\n");
+var itemsText=items.map(function(it,i){return(i+1)+". Заголовок: "+it.title+"\n   URL (использовать в гиперссылке): "+it.link+(it.description?"\n   Краткое описание: "+it.description:"")}).join("\n\n");
 pickRubric(sched.rubric||"moto_news");
 setTimeout(function(){
-setFields({news:itemsText});
+setFields({news:"СОБРАННЫЕ ССЫЛКИ С ОБЯЗАТЕЛЬНЫМИ ГИПЕРССЫЛКАМИ НА URL ИЗ СПИСКА:\n\n"+itemsText+"\n\nВАЖНО: в каждой новости обязательно сделай <a href='URL'>гиперссылку</a> на указанный URL. Не выдумывай другие ссылки, используй ТОЛЬКО те что перечислены выше. Если URL помечен как источник - делай ссылку на него."});
 setCalendarOpen(false);
 setScheduledEdit(null);
 },50);
@@ -456,12 +480,12 @@ function openCalendar(){setCalendarOpen(true);loadScheduled()}
 function saveScheduled(item){
 var url=item.id?"/api/scheduled/"+item.id:"/api/scheduled";
 var method=item.id?"PUT":"POST";
-fetch(url,{method:method,headers:{"Content-Type":"application/json",Authorization:"Bearer "+token},body:JSON.stringify(item)}).then(function(r){return r.json()}).then(function(){setScheduledEdit(null);loadScheduled()});
+fetch(url,{method:method,headers:{"Content-Type":"application/json",Authorization:"Bearer "+token},body:JSON.stringify(item)}).then(function(r){return r.json()}).then(function(){setScheduledEdit(null);loadScheduled();loadCollectedUrls()});
 }
 
 function deleteScheduled(id){
 if(!confirm("Удалить запись?"))return;
-fetch("/api/scheduled/"+id,{method:"DELETE",headers:{Authorization:"Bearer "+token}}).then(function(){loadScheduled()});
+fetch("/api/scheduled/"+id,{method:"DELETE",headers:{Authorization:"Bearer "+token}}).then(function(){loadScheduled();loadCollectedUrls()});
 }
 
 function fmtYMD(d){var m=d.getMonth()+1;var dd=d.getDate();return d.getFullYear()+"-"+(m<10?"0":"")+m+"-"+(dd<10?"0":"")+dd}
@@ -733,6 +757,11 @@ return fetch("/api/upload",{method:"POST",headers:{Authorization:"Bearer "+token
 if(d.path){
 setAttachedMedia({path:d.path,preview:url,name:"image.jpg",type:"image"});
 setImgSearch(false);
+// Scroll to attached media indicator
+setTimeout(function(){
+var el=document.querySelector(".media-attached-bar");
+if(el)el.scrollIntoView({behavior:"smooth",block:"center"});
+},100);
 }else{alert("Ошибка: "+(d.error||"не удалось"))}
 }).catch(function(e){alert("Ошибка: "+e.message)});
 }
@@ -1015,7 +1044,8 @@ m.bike||m.notes?h("div",{style:{fontSize:11,color:"var(--text-muted)",lineHeight
 h("div",{className:"header"},
 h("div",{className:"header-left"},
 h("button",{onClick:function(){setSidebar(!sidebar)},className:"menu-btn"},"\u2630"),
-h("div",{className:"brand"},h("span",{className:"brand-name"},"HARD LOCALS"),h("span",{className:"brand-sub"},"Content Operations"))
+h("div",{className:"brand"},h("span",{className:"brand-name"},"HARD LOCALS"),h("span",{className:"brand-sub"},"Content Operations")),
+sel?h("button",{onClick:function(){setSel(null);setText("");setFields({});setBlocks(null);setBanner(null);setBannerOpen(false);setImgSearch(false);setAttachedMedia(null)},className:"header-btn",style:{marginLeft:16}},"\u2190 Главная"):null
 ),
 h("div",{className:"header-right"},
 h("div",{className:"status-pill"},h("span",{className:"status-dot"}),h("span",{className:"status-text"},"API Online")),
@@ -1101,6 +1131,8 @@ h("div",{style:{padding:12,flex:1,display:"flex",flexDirection:"column"}},
 h("div",{style:{fontSize:9,color:"var(--text-dim)",marginBottom:4,textTransform:"uppercase",letterSpacing:"0.1em"}},item.source+" \u00B7 "+fmtDate(item.pubDate)),
 h("div",{style:{fontSize:12,fontWeight:600,lineHeight:1.4,marginBottom:8,color:"var(--text)",flex:1}},item.title),
 h("div",{style:{display:"flex",gap:4,marginTop:"auto",flexWrap:"wrap"}},
+collectedUrls.indexOf(item.link)>=0?
+h("button",{disabled:true,style:{padding:"5px 8px",fontSize:10,color:"var(--success)",flex:1,background:"rgba(74,222,128,0.1)",border:"1px solid rgba(74,222,128,0.3)",borderRadius:7,cursor:"default"}},"\u2713 В дайджесте"):
 h("button",{onClick:function(){openDigestPicker(item)},className:"btn-ghost",style:{padding:"5px 8px",fontSize:10,color:"var(--accent)",flex:1,borderColor:"rgba(232,93,31,0.3)"}},"\u{1F516} В дайджест"),
 h("button",{onClick:function(){singleNewsToPost(item)},className:"btn-ghost",style:{padding:"5px 8px",fontSize:10,flex:1}},"\u{1F4DD} Пост"),
 h("a",{href:item.link,target:"_blank",className:"btn-ghost",style:{padding:"5px 8px",fontSize:10,textAlign:"center"}},"\u2197")
@@ -1153,8 +1185,9 @@ h("input",{id:"photo-upload",type:"file",multiple:true,accept:"image/*",style:{d
 uploaded.length>0?h("div",{className:"field"},h("div",{className:"field-label"},"Загруженные"),h("div",{className:"image-grid"},uploaded.map(function(p,i){return h("div",{key:"u"+i,onClick:function(){setBannerPhoto(p)},className:"image-item"+(bannerPhoto===p?" picked":"")+(bannerPhoto&&bannerPhoto!==p?" dimmed":"")},h("img",{src:p,alt:""}))}))):null,
 h("div",{className:"field"},h("div",{className:"field-label"},"Фото с сайта"),h("div",{className:"image-grid"},SITE_PHOTOS.map(function(p){return h("div",{key:p,onClick:function(){setBannerPhoto(p)},className:"image-item"+(bannerPhoto===p?" picked":"")+(bannerPhoto&&bannerPhoto!==p?" dimmed":"")},h("img",{src:p,alt:""}))}))),
 h("div",{className:"actions"},
-h("button",{onClick:makeBanner,disabled:!bannerPhoto,className:"btn-primary"},"Сгенерировать баннер"),
-banner?h("button",{onClick:attachBanner,className:"btn-primary accent"},"\u2713 Прикрепить к посту"):null
+h("button",{onClick:makeBanner,disabled:!bannerPhoto,className:"btn-primary"},banner?"Перегенерировать":"Сгенерировать баннер"),
+banner&&!attachedMedia?h("button",{onClick:attachBanner,className:"btn-primary accent btn-attach-pulse"},"\u{1F4CE} Прикрепить к посту"):null,
+banner&&attachedMedia?h("span",{className:"tool-badge",style:{alignSelf:"center"}},"\u2713 Уже прикреплён"):null
 ),
 banner?h("img",{src:banner,className:"banner-preview"}):null
 )
