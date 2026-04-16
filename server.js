@@ -1313,6 +1313,32 @@ app.post('/api/scheduled/batch-generate', auth, async (req, res) => {
   res.json({ ok: true, count: generated, total: drafts.length, errors });
 });
 
+// Approve all drafts with content for a week
+app.post('/api/scheduled/approve-all', auth, (req, res) => {
+  const { week_start } = req.body;
+  if (!week_start) return res.status(400).json({ error: 'week_start required' });
+  const endDate = new Date(week_start + 'T00:00:00');
+  endDate.setDate(endDate.getDate() + 6);
+  const endStr = endDate.toISOString().slice(0, 10);
+
+  const result = db.prepare(`
+    UPDATE scheduled SET status = 'ready', updated_at = CURRENT_TIMESTAMP
+    WHERE scheduled_date >= ? AND scheduled_date <= ?
+    AND status = 'draft'
+    AND content IS NOT NULL AND content != ''
+  `).run(week_start, endStr);
+
+  console.log(`[APPROVE] ${result.changes} drafts → ready`);
+  res.json({ ok: true, count: result.changes });
+});
+
+// Manual scheduler trigger
+app.post('/api/scheduled/run-now', auth, async (req, res) => {
+  console.log('[SCHEDULER] Manual trigger');
+  await runScheduler();
+  res.json({ ok: true });
+});
+
 // ═══════ HISTORY ═══════
 app.get('/api/posts', auth, (req, res) => {
   const posts = db.prepare('SELECT * FROM posts ORDER BY created_at DESC LIMIT 100').all();
@@ -1385,7 +1411,7 @@ app.get('*', (req, res) => {
 });
 
 app.listen(PORT, '0.0.0.0', () => {
-  console.log(`\n  Hard Locals Content Ops v8.6 (missed rubrics fallback + schedule from editor)`);
+  console.log(`\n  Hard Locals Content Ops v8.7 (approve-all + manual publish + tooltips)`);
   console.log(`  → http://0.0.0.0:${PORT}`);
   console.log(`  → Anthropic: ${ANTHROPIC_API_KEY ? '✓' : '✗'}`);
   console.log(`  → TG Bot: ${TG_BOT_TOKEN ? '✓' : '✗'}`);

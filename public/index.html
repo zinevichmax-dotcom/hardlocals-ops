@@ -890,6 +890,24 @@ loadScheduled();
 }).catch(function(e){setBatchGenerating(false);alert("Ошибка: "+e.message)});
 }
 
+function approveAllDrafts(){
+var ws=calendarWeekStart;
+var fmt=function(d){var m=d.getMonth()+1;var dd=d.getDate();return d.getFullYear()+"-"+(m<10?"0":"")+m+"-"+(dd<10?"0":"")+dd};
+if(!confirm("Все черновики с текстом на этой неделе → В очередь?"))return;
+apiCall("/api/scheduled/approve-all",{week_start:fmt(ws)},token).then(function(d){
+if(d.error){alert(d.error);return}
+alert(d.count+" постов поставлено в очередь!");
+loadScheduled();
+});
+}
+
+function runSchedulerNow(){
+apiCall("/api/scheduled/run-now",{},token).then(function(d){
+alert("Scheduler выполнен. Проверь канал.");
+loadScheduled();
+});
+}
+
 function approvePost(sched){
 // Change status to 'ready' — scheduler will auto-publish
 fetch("/api/scheduled/"+sched.id,{method:"PUT",headers:{"Content-Type":"application/json",Authorization:"Bearer "+token},body:JSON.stringify(Object.assign({},sched,{status:"ready",items:typeof sched.items==="string"?JSON.parse(sched.items||"[]"):(sched.items||[])}))}).then(function(){loadScheduled()});
@@ -1183,6 +1201,8 @@ h("div",null,h("div",{className:"modal-title"},"\u{1F4C5} Контент-кал�
 h("div",{style:{display:"flex",gap:6,alignItems:"center"}},
 h("button",{onClick:generateWeekPlan,className:"btn-primary accent",style:{padding:"7px 14px",fontSize:11}},"\u{1F4C5} План на неделю"),
 h("button",{onClick:batchGenerateContent,disabled:batchGenerating,className:"btn-primary",style:{padding:"7px 14px",fontSize:11,background:batchGenerating?"var(--bg-elev)":"rgba(74,222,128,0.15)",color:batchGenerating?"var(--text-dim)":"#4ade80",border:"1px solid rgba(74,222,128,0.3)"}},batchGenerating?"\u23F3 Генерирую...":"\u2728 Сгенерировать всё"),
+h("button",{onClick:approveAllDrafts,className:"btn-primary",style:{padding:"7px 14px",fontSize:11,background:"rgba(74,222,128,0.08)",color:"#4ade80",border:"1px solid rgba(74,222,128,0.3)"}},"\u2705 Одобрить всё"),
+h("button",{onClick:runSchedulerNow,className:"btn-primary",style:{padding:"7px 14px",fontSize:11,background:"rgba(59,130,246,0.1)",color:"#60a5fa",border:"1px solid rgba(59,130,246,0.3)"}},"\u25B6 Опубликовать"),
 h("button",{onClick:function(){var d=new Date(calendarWeekStart);d.setDate(d.getDate()-7);setCalendarWeekStart(d);setTimeout(loadScheduled,50)},className:"btn-ghost"},"\u2190"),
 h("button",{onClick:function(){var d=new Date();var day=d.getDay();var diff=d.getDate()-day+(day===0?-6:1);var m=new Date(d);m.setDate(diff);m.setHours(0,0,0,0);setCalendarWeekStart(m);setTimeout(loadScheduled,50)},className:"btn-ghost"},"Сегодня"),
 h("button",{onClick:function(){var d=new Date(calendarWeekStart);d.setDate(d.getDate()+7);setCalendarWeekStart(d);setTimeout(loadScheduled,50)},className:"btn-ghost"},"\u2192"),
@@ -1286,7 +1306,7 @@ dayPosts.map(function(p){var r=null;for(var j=0;j<RUBRICS.length;j++){if(RUBRICS
 var statusColors={draft:"var(--line)",ready:"rgba(74,222,128,0.5)",sent:"rgba(74,222,128,0.8)",sending:"var(--accent)",error:"var(--danger)"};
 var statusIcons={draft:"\u270F",ready:"\u23F3",sent:"\u2705",sending:"\u{1F504}",error:"\u26A0"};
 var st=p.status||"planned";
-return h("div",{key:p.id,draggable:st!=="sent",onDragStart:function(ev){ev.dataTransfer.setData("text/plain",String(p.id))},style:{background:"var(--bg-card)",borderLeft:"3px solid "+(statusColors[st]||"var(--line-soft)"),borderRadius:5,padding:"4px 6px",fontSize:10,cursor:st!=="sent"?"grab":"pointer",display:"flex",alignItems:"center",gap:4},onClick:function(e){e.stopPropagation();setScheduledEdit(p)}},
+return h("div",{key:p.id,draggable:st!=="sent",onDragStart:function(ev){ev.dataTransfer.setData("text/plain",String(p.id))},style:{background:"var(--bg-card)",borderLeft:"3px solid "+(statusColors[st]||"var(--line-soft)"),borderRadius:5,padding:"4px 6px",fontSize:10,cursor:st!=="sent"?"grab":"pointer",display:"flex",alignItems:"center",gap:4},title:p.content?(p.content.replace(/<[^>]*>/g,"").slice(0,120)+"..."):(st==="draft"?"Нет текста — сгенерируй":""),onClick:function(e){e.stopPropagation();setScheduledEdit(p)}},
 h("span",{title:st},statusIcons[st]||""),
 h("span",null,r?r.icon:""),
 h("span",{style:{flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",color:st==="sent"?"var(--text-dim)":"var(--text)"}},p.scheduled_time?(p.scheduled_time+" "):"",p.title||(r?r.name:p.rubric)),
