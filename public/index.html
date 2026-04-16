@@ -518,7 +518,9 @@ function openCalendar(){setCalendarOpen(true);loadScheduled()}
 function saveScheduled(item){
 var url=item.id?"/api/scheduled/"+item.id:"/api/scheduled";
 var method=item.id?"PUT":"POST";
-fetch(url,{method:method,headers:{"Content-Type":"application/json",Authorization:"Bearer "+token},body:JSON.stringify(item)}).then(function(r){return r.json()}).then(function(){setScheduledEdit(null);loadScheduled();loadCollectedUrls()});
+var payload=Object.assign({},item);
+if(payload.items&&typeof payload.items!=="string"){payload.items=payload.items}
+fetch(url,{method:method,headers:{"Content-Type":"application/json",Authorization:"Bearer "+token},body:JSON.stringify(payload)}).then(function(r){return r.json()}).then(function(){setScheduledEdit(null);loadScheduled();loadCollectedUrls()});
 }
 
 function deleteScheduled(id){
@@ -1185,10 +1187,18 @@ h("button",{onClick:function(){var el=document.getElementById("add-custom-url");
 )
 );
 })(),
+// CONTENT PREVIEW/EDITOR
+h("div",{className:"field"},
+h("div",{className:"field-label",style:{display:"flex",justifyContent:"space-between",alignItems:"center"}},
+h("span",null,"\u{1F4DD} Текст поста"),
+scheduledEdit.content?h("span",{style:{fontSize:10,color:"var(--success)"}},scheduledEdit.content.length+" символов"):h("span",{style:{fontSize:10,color:"var(--text-dim)"}},"Пусто — сгенерируй через кнопку ниже")
+),
+h("textarea",{className:"textarea",style:{minHeight:120,fontSize:12,fontFamily:"var(--f-mono)"},placeholder:"Текст будет здесь после генерации. Можешь писать вручную.",value:scheduledEdit.content||"",onChange:function(e){setScheduledEdit(Object.assign({},scheduledEdit,{content:e.target.value}))}})
+),
 h("div",{className:"actions",style:{flexWrap:"wrap"}},
 h("button",{onClick:function(){saveScheduled(Object.assign({},scheduledEdit,{items:typeof scheduledEdit.items==="string"?JSON.parse(scheduledEdit.items||"[]"):(scheduledEdit.items||[])}))},disabled:!scheduledEdit.scheduled_date||!scheduledEdit.rubric,className:"btn-primary accent"},"\u{1F4BE} Сохранить"),
 scheduledEdit.status==="draft"?h("button",{onClick:function(){generateDraftContent(scheduledEdit)},className:"btn-primary",style:{background:"var(--bg-elev)",color:"var(--text)"}},"\u2728 Сгенерировать текст"):null,
-scheduledEdit.status==="draft"&&scheduledEdit.content?h("button",{onClick:function(){approvePost(scheduledEdit)},className:"btn-primary",style:{background:"rgba(74,222,128,0.2)",color:"#4ade80",border:"1px solid rgba(74,222,128,0.4)"}},"\u2705 В очередь"):null,
+scheduledEdit.content&&scheduledEdit.status!=="ready"&&scheduledEdit.status!=="sent"?h("button",{onClick:function(){approvePost(Object.assign({},scheduledEdit))},className:"btn-primary",style:{background:"rgba(74,222,128,0.2)",color:"#4ade80",border:"1px solid rgba(74,222,128,0.4)"}},"\u2705 В очередь"):null,
 h("button",{onClick:function(){setScheduledEdit(null)},className:"btn-secondary"},"Отмена")
 )
 ):null,
@@ -1201,8 +1211,9 @@ var d=new Date(start);d.setDate(start.getDate()+i);
 var ymd=fmtYMD(d);
 var dayPosts=scheduled.filter(function(s){return s.scheduled_date===ymd});
 var isToday=ymd===todayStr;
+var isPast=ymd<todayStr;
 var dayName=["Пн","Вт","Ср","Чт","Пт","Сб","Вс"][(d.getDay()+6)%7];
-days.push(h("div",{key:i,style:{background:isToday?"rgba(232,93,31,0.08)":"var(--bg-elev)",border:"1px solid "+(isToday?"var(--accent)":"var(--line-soft)"),borderRadius:8,padding:8,minHeight:100,cursor:"pointer",display:"flex",flexDirection:"column",gap:4,transition:"background 0.2s"},
+days.push(h("div",{key:i,style:{background:isToday?"rgba(232,93,31,0.08)":isPast?"rgba(0,0,0,0.2)":"var(--bg-elev)",border:"1px solid "+(isToday?"var(--accent)":"var(--line-soft)"),borderRadius:8,padding:8,minHeight:100,cursor:"pointer",display:"flex",flexDirection:"column",gap:4,opacity:isPast?0.5:1,transition:"background 0.2s"},
 onDragOver:function(ev){ev.preventDefault();ev.currentTarget.style.background="rgba(232,93,31,0.15)"},
 onDragLeave:function(ev){ev.currentTarget.style.background=isToday?"rgba(232,93,31,0.08)":"var(--bg-elev)"},
 onDrop:function(ev){ev.preventDefault();ev.currentTarget.style.background=isToday?"rgba(232,93,31,0.08)":"var(--bg-elev)";var pid=ev.dataTransfer.getData("text/plain");if(pid){fetch("/api/scheduled/"+pid+"/content",{method:"POST",headers:{"Content-Type":"application/json",Authorization:"Bearer "+token},body:JSON.stringify({scheduled_date:ymd})}).then(function(){loadScheduled()})}},
@@ -1216,6 +1227,7 @@ return h("div",{key:p.id,draggable:st!=="sent",onDragStart:function(ev){ev.dataT
 h("span",{title:st},statusIcons[st]||""),
 h("span",null,r?r.icon:""),
 h("span",{style:{flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",color:st==="sent"?"var(--text-dim)":"var(--text)"}},p.scheduled_time?(p.scheduled_time+" "):"",p.title||(r?r.name:p.rubric)),
+p.content?h("span",{style:{width:6,height:6,borderRadius:"50%",background:st==="ready"?"#4ade80":"var(--accent)",flexShrink:0},title:"Текст готов"}):null,
 st==="draft"&&p.content?h("button",{onClick:function(e){e.stopPropagation();approvePost(p)},style:{background:"rgba(74,222,128,0.2)",border:"1px solid rgba(74,222,128,0.4)",borderRadius:4,color:"#4ade80",cursor:"pointer",padding:"2px 5px",fontSize:9,fontWeight:600},title:"В очередь"},"\u2713"):null,
 st!=="sent"?h("button",{onClick:function(e){e.stopPropagation();deleteScheduled(p.id)},style:{background:"transparent",border:"none",color:"var(--text-dim)",cursor:"pointer",padding:0,fontSize:10}},"\u2715"):null
 );
