@@ -31,7 +31,7 @@ app.use(express.static(join(__dirname, 'public')));
 
 // ═══════ ROUTES DATABASE (10 маршрутов сезона 2026) ═══════
 const ROUTES = [
-  { n: 1, name: 'Открытие мотосезона', date: '2026-05-23', km: null, days: 1, desc: 'Большой клубный OpenAir в Москве. Мотоциклы, громкий звук, диджей, музыка и танцы. Бар, напитки, бургеры, шоу-программа и вступительные речи. Точка старта сезона 2026.' },
+  { n: 1, name: 'Открытие мотосезона', date: null, dateTbd: 'Май 2026 (tbd)', km: null, days: 1, desc: 'Большой клубный OpenAir в Москве. Мотоциклы, громкий звук, диджей, музыка и танцы. Бар, напитки, бургеры, шоу-программа и вступительные речи. Точка старта сезона 2026.' },
   { n: 2, name: 'Оптина Пустынь', date: '2026-05-16', km: 260, days: 2, desc: '260 километров, чтобы сбавить обороты. Дорога, после которой хочется говорить тише и думать глубже. Место, где скорость остаётся за воротами, а ты возвращаешься к себе.' },
   { n: 3, name: 'Санкт-Петербург', date: '2026-06-12', km: 700, days: 3, desc: '700 километров чистого хода. Набережные, мосты, Финский залив и пустые утренние улицы. Город, который мотоциклист чувствует иначе. Питер — это дорога, ритм и свобода без суеты.' },
   { n: 4, name: 'Burning Wheels', date: '2026-06-27', km: 170, days: 1, desc: '170 километров к Волге. Жаркая дорога, пляж, вечер и свои рядом. Фестиваль, где важны не афиши, а ощущение, что ты на своём месте. Лето начинается здесь.' },
@@ -45,23 +45,24 @@ const ROUTES = [
 
 function getNextRoute() {
   const today = new Date().toISOString().slice(0, 10);
-  return ROUTES.find(r => r.date >= today) || ROUTES[ROUTES.length - 1];
+  const future = ROUTES.filter(r => r.date && r.date >= today).sort((a, b) => a.date.localeCompare(b.date));
+  return future[0] || ROUTES.filter(r => r.date).pop() || ROUTES[0];
 }
 
 function getRouteForWeek(weekDate) {
-  // Find the route whose date is closest to this week (within 3 weeks)
   const wStart = new Date(weekDate);
   const wEnd = new Date(wStart); wEnd.setDate(wEnd.getDate() + 21);
-  const upcoming = ROUTES.filter(r => r.date >= weekDate && r.date <= wEnd.toISOString().slice(0, 10));
+  const upcoming = ROUTES.filter(r => r.date && r.date >= weekDate && r.date <= wEnd.toISOString().slice(0, 10)).sort((a, b) => a.date.localeCompare(b.date));
   return upcoming[0] || getNextRoute();
 }
 
 function getSeasonProgress(dateStr) {
-  return ROUTES.map(r => {
-    const done = r.date < dateStr;
-    const next = !done && ROUTES.filter(x => x.date < dateStr || x === r).length === ROUTES.filter(x => x.date < dateStr).length + 1;
-    return { ...r, done, next: !done && r === getNextRoute() };
-  });
+  const nextR = getNextRoute();
+  return ROUTES.map(r => ({
+    ...r,
+    done: r.date ? r.date < dateStr : false,
+    next: r === nextR,
+  }));
 }
 
 // ═══════ DB ═══════
@@ -1088,7 +1089,8 @@ app.post('/api/scheduled/generate-week', auth, async (req, res) => {
   for (let i = 0; i < 7; i++) {
     const d = new Date(startDate); d.setDate(d.getDate() + i);
     const dateStr = fmt(d);
-    const dayName = days[i];
+    const dayIdx = (d.getDay() + 6) % 7; // 0=Mon...6=Sun
+    const dayName = days[dayIdx];
 
     // Skip past days
     if (dateStr < todayStr) continue;
@@ -1110,7 +1112,6 @@ app.post('/api/scheduled/generate-week', auth, async (req, res) => {
     slots.push({ date: dateStr, time: '12:00', rubric: 'humor', title: `Юмор ${dayName}`, auto_context: 'мото юмор, мем, смешное видео' });
 
     // Weekly rubrics: assigned to preferred day, or first available if preferred is past
-    const dayIdx = (d.getDay() + 6) % 7; // 0=Mon, 1=Tue... 6=Sun
 
     if (dayIdx === 0) slots.push({ date: dateStr, time: '11:00', rubric: 'moto_news', title: 'Дайджест мотоновостей', auto_context: 'еженедельный дайджест' });
     if (dayIdx === 1) slots.push({ date: dateStr, time: '10:00', rubric: 'kind_reminder', title: 'Напоминание о безопасности', auto_context: '' });
@@ -1129,7 +1130,7 @@ app.post('/api/scheduled/generate-week', auth, async (req, res) => {
     if (dayIdx === 5) slots.push({ date: dateStr, time: '11:00', rubric: 'trip_announce', title: 'Анонс поездки', auto_context: '' });
     if (dayIdx === 6) {
       const progress = getSeasonProgress(dateStr);
-      const progressStr = progress.map(r => `${r.done ? '✅' : r.next ? '👉' : '⬜'} ${r.n}. ${r.name} — ${r.date}${r.km ? ', ' + r.km + ' км' : ''}`).join('\n');
+      const progressStr = progress.map(r => `${r.done ? '✅' : r.next ? '👉' : '⬜'} ${r.n}. ${r.name} — ${r.date || r.dateTbd || 'tbd'}${r.km ? ', ' + r.km + ' км' : ''}`).join('\n');
       slots.push({ date: dateStr, time: '11:00', rubric: 'season_calendar', title: 'Календарь сезона', auto_context: progressStr });
     }
 
@@ -1256,6 +1257,30 @@ app.post('/api/scheduled/generate-week', auth, async (req, res) => {
   }
 
   console.log(`[PLAN] Generated ${inserted.length} drafts for week ${week_start}`);
+
+  // Force-check: ensure ALL birthdays this week have a scheduled post
+  const allScheduledNow = db.prepare('SELECT * FROM scheduled WHERE scheduled_date >= ? AND scheduled_date <= ?').all(fmt(startDate), fmt(endDate));
+  const bdayScheduled = new Set(allScheduledNow.filter(s => s.rubric === 'birthday').map(s => s.title));
+  
+  for (const m of weekBdays) {
+    const bdayTitle = `ДР: ${m.name || m.nickname}`;
+    if (!bdayScheduled.has(bdayTitle)) {
+      // Find the date for this birthday
+      const bday = m.birthday.slice(5); // MM-DD
+      for (let i = 0; i < 7; i++) {
+        const dd = new Date(startDate); dd.setDate(dd.getDate() + i);
+        const check = (dd.getMonth() + 1).toString().padStart(2, '0') + '-' + dd.getDate().toString().padStart(2, '0');
+        if (bday === check) {
+          const bdayDate = fmt(dd);
+          const r = insertStmt.run(bdayDate, '10:00', 'birthday', bdayTitle, `Имя: ${m.name}, прозвище: ${m.nickname}, байк: ${m.bike || '?'}`, null, m.photo_path || null, 'draft');
+          inserted.push({ id: r.lastInsertRowid, date: bdayDate, rubric: 'birthday', title: bdayTitle });
+          console.log(`[PLAN] Force-added birthday: ${bdayTitle} on ${bdayDate}`);
+          break;
+        }
+      }
+    }
+  }
+
   res.json({ ok: true, count: inserted.length, slots: inserted });
 });
 
@@ -1338,7 +1363,7 @@ app.post('/api/scheduled/batch-generate', auth, async (req, res) => {
         }
         case 'season_calendar': {
           const progress = getSeasonProgress(draft.scheduled_date);
-          const progressStr = progress.map(r => `${r.done ? '✅' : r.next ? '👉' : '⬜'} ${r.n}. ${r.name} — ${r.date}${r.km ? ', ' + r.km + ' км' : ''}`).join('\n');
+          const progressStr = progress.map(r => `${r.done ? '✅' : r.next ? '👉' : '⬜'} ${r.n}. ${r.name} — ${r.date || r.dateTbd || 'tbd'}${r.km ? ', ' + r.km + ' км' : ''}`).join('\n');
           prompt = `Пост "Календарь сезона Hard Locals 2026". Вот прогресс:\n${progressStr}\n\nСделай пост: вступление (1-2 предложения), список маршрутов с эмодзи (✅ пройден, 👉 следующий, ⬜ впереди), призыв. HTML для TG.`;
           break;
         }
@@ -1486,7 +1511,7 @@ app.get('*', (req, res) => {
 });
 
 app.listen(PORT, '0.0.0.0', () => {
-  console.log(`\n  Hard Locals Content Ops v9.0 (10 routes database + smart prompts + countdown)`);
+  console.log(`\n  Hard Locals Content Ops v9.1 (birthday force-add + day name fix + release all)`);
   console.log(`  → http://0.0.0.0:${PORT}`);
   console.log(`  → Anthropic: ${ANTHROPIC_API_KEY ? '✓' : '✗'}`);
   console.log(`  → TG Bot: ${TG_BOT_TOKEN ? '✓' : '✗'}`);

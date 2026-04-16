@@ -908,6 +908,20 @@ loadScheduled();
 });
 }
 
+function releaseAll(){
+var ws=calendarWeekStart;
+var fmt=function(d){var m=d.getMonth()+1;var dd=d.getDate();return d.getFullYear()+"-"+(m<10?"0":"")+m+"-"+(dd<10?"0":"")+dd};
+if(!confirm("Одобрить все черновики с текстом и запустить публикацию?"))return;
+apiCall("/api/scheduled/approve-all",{week_start:fmt(ws)},token).then(function(d){
+if(d.error){alert(d.error);return}
+if(d.count===0){alert("Нет черновиков с текстом для одобрения");return}
+apiCall("/api/scheduled/run-now",{},token).then(function(){
+alert(d.count+" постов одобрено. Прошедшие по времени — отправлены. Будущие уйдут по расписанию.");
+loadScheduled();
+});
+});
+}
+
 function approvePost(sched){
 // Change status to 'ready' — scheduler will auto-publish
 fetch("/api/scheduled/"+sched.id,{method:"PUT",headers:{"Content-Type":"application/json",Authorization:"Bearer "+token},body:JSON.stringify(Object.assign({},sched,{status:"ready",items:typeof sched.items==="string"?JSON.parse(sched.items||"[]"):(sched.items||[])}))}).then(function(){loadScheduled()});
@@ -1202,7 +1216,7 @@ h("div",{style:{display:"flex",gap:6,alignItems:"center"}},
 h("button",{onClick:generateWeekPlan,className:"btn-primary accent",style:{padding:"7px 14px",fontSize:11}},"\u{1F4C5} План на неделю"),
 h("button",{onClick:batchGenerateContent,disabled:batchGenerating,className:"btn-primary",style:{padding:"7px 14px",fontSize:11,background:batchGenerating?"var(--bg-elev)":"rgba(74,222,128,0.15)",color:batchGenerating?"var(--text-dim)":"#4ade80",border:"1px solid rgba(74,222,128,0.3)"}},batchGenerating?"\u23F3 Генерирую...":"\u2728 Сгенерировать всё"),
 h("button",{onClick:approveAllDrafts,className:"btn-primary",style:{padding:"7px 14px",fontSize:11,background:"rgba(74,222,128,0.08)",color:"#4ade80",border:"1px solid rgba(74,222,128,0.3)"}},"\u2705 Одобрить всё"),
-h("button",{onClick:runSchedulerNow,className:"btn-primary",style:{padding:"7px 14px",fontSize:11,background:"rgba(59,130,246,0.1)",color:"#60a5fa",border:"1px solid rgba(59,130,246,0.3)"}},"\u25B6 Опубликовать"),
+h("button",{onClick:releaseAll,className:"btn-primary",style:{padding:"7px 14px",fontSize:11,background:"rgba(59,130,246,0.15)",color:"#60a5fa",border:"1px solid rgba(59,130,246,0.3)",fontWeight:700}},"\u{1F680} Выпустить"),
 h("button",{onClick:function(){var d=new Date(calendarWeekStart);d.setDate(d.getDate()-7);setCalendarWeekStart(d);setTimeout(loadScheduled,50)},className:"btn-ghost"},"\u2190"),
 h("button",{onClick:function(){var d=new Date();var day=d.getDay();var diff=d.getDate()-day+(day===0?-6:1);var m=new Date(d);m.setDate(diff);m.setHours(0,0,0,0);setCalendarWeekStart(m);setTimeout(loadScheduled,50)},className:"btn-ghost"},"Сегодня"),
 h("button",{onClick:function(){var d=new Date(calendarWeekStart);d.setDate(d.getDate()+7);setCalendarWeekStart(d);setTimeout(loadScheduled,50)},className:"btn-ghost"},"\u2192"),
