@@ -343,48 +343,33 @@ app.post('/api/post/telegram', auth, async (req, res) => {
 
 // ═══════ VK POSTING ═══════
 
-// VK album cache (find or create "Auto-uploads" album)
+// VK album cache (find existing "HL Ops Auto" album — must be created manually in VK group)
 let vkAlbumId = null;
 
-async function vkGetOrCreateAlbum() {
+async function vkGetAlbum() {
   if (vkAlbumId) return vkAlbumId;
   const ALBUM_TITLE = 'HL Ops Auto';
 
-  // Find existing
   const getRes = await fetch(
     `https://api.vk.com/method/photos.getAlbums?owner_id=-${VK_GROUP_ID}&access_token=${VK_ACCESS_TOKEN}&v=5.199`
   );
   const getData = await getRes.json();
-  if (getData.response && getData.response.items) {
-    const found = getData.response.items.find(a => a.title === ALBUM_TITLE);
-    if (found) {
-      vkAlbumId = found.id;
-      console.log('[VK] Using existing album', vkAlbumId);
-      return vkAlbumId;
-    }
-  }
+  if (getData.error) throw new Error('VK getAlbums: ' + getData.error.error_msg);
+  if (!getData.response || !getData.response.items) throw new Error('VK getAlbums: unexpected response');
 
-  // Create new
-  const createParams = new URLSearchParams({
-    group_id: VK_GROUP_ID,
-    title: ALBUM_TITLE,
-    description: 'Авто-загрузки из Hard Locals Ops',
-    upload_by_admins_only: '1',
-    comments_disabled: '1',
-    access_token: VK_ACCESS_TOKEN,
-    v: '5.199',
-  });
-  const createRes = await fetch(`https://api.vk.com/method/photos.createAlbum?${createParams}`);
-  const createData = await createRes.json();
-  if (!createData.response) throw new Error('VK createAlbum: ' + (createData.error?.error_msg || 'unknown'));
-  vkAlbumId = createData.response.id;
-  console.log('[VK] Created album', vkAlbumId);
+  const found = getData.response.items.find(a => a.title === ALBUM_TITLE);
+  if (!found) {
+    const available = getData.response.items.map(a => a.title).join(', ');
+    throw new Error(`Альбом "${ALBUM_TITLE}" не найден в группе. Создай альбом с таким названием в разделе Фотографии. Доступные: ${available || 'нет альбомов'}`);
+  }
+  vkAlbumId = found.id;
+  console.log('[VK] Using album', vkAlbumId, `"${ALBUM_TITLE}"`);
   return vkAlbumId;
 }
 
 // Upload photo via album (works with community token)
 async function vkUploadPhoto(filePath) {
-  const albumId = await vkGetOrCreateAlbum();
+  const albumId = await vkGetAlbum();
 
   // 1. Get upload server for album
   const uploadServerRes = await fetch(
@@ -864,7 +849,7 @@ app.get('*', (req, res) => {
 });
 
 app.listen(PORT, '0.0.0.0', () => {
-  console.log(`\n  Hard Locals Content Ops v7.5.1 (VK via album upload)`);
+  console.log(`\n  Hard Locals Content Ops v7.5.2 (VK via manual album)`);
   console.log(`  → http://0.0.0.0:${PORT}`);
   console.log(`  → Anthropic: ${ANTHROPIC_API_KEY ? '✓' : '✗'}`);
   console.log(`  → TG Bot: ${TG_BOT_TOKEN ? '✓' : '✗'}`);
