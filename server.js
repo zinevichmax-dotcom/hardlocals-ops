@@ -29,6 +29,41 @@ const {
 app.use(express.json({ limit: '50mb' }));
 app.use(express.static(join(__dirname, 'public')));
 
+// ═══════ ROUTES DATABASE (10 маршрутов сезона 2026) ═══════
+const ROUTES = [
+  { n: 1, name: 'Открытие мотосезона', date: '2026-05-23', km: null, days: 1, desc: 'Большой клубный OpenAir в Москве. Мотоциклы, громкий звук, диджей, музыка и танцы. Бар, напитки, бургеры, шоу-программа и вступительные речи. Точка старта сезона 2026.' },
+  { n: 2, name: 'Оптина Пустынь', date: '2026-05-16', km: 260, days: 2, desc: '260 километров, чтобы сбавить обороты. Дорога, после которой хочется говорить тише и думать глубже. Место, где скорость остаётся за воротами, а ты возвращаешься к себе.' },
+  { n: 3, name: 'Санкт-Петербург', date: '2026-06-12', km: 700, days: 3, desc: '700 километров чистого хода. Набережные, мосты, Финский залив и пустые утренние улицы. Город, который мотоциклист чувствует иначе. Питер — это дорога, ритм и свобода без суеты.' },
+  { n: 4, name: 'Burning Wheels', date: '2026-06-27', km: 170, days: 1, desc: '170 километров к Волге. Жаркая дорога, пляж, вечер и свои рядом. Фестиваль, где важны не афиши, а ощущение, что ты на своём месте. Лето начинается здесь.' },
+  { n: 5, name: 'Суздаль', date: '2026-07-10', km: 250, days: 3, desc: '250 километров и другой темп жизни. Блюз, моторы и древний город. Музыка под открытым небом, дорога как часть ритуала. Классика сезона Hard Locals.' },
+  { n: 6, name: 'Нилова Пустынь', date: '2026-08-01', km: 400, days: 2, desc: '400 километров от города и шума. Остров, вода, лес и монастырь над горизонтом. Поездка, где дорога — не цель, а путь внутрь. Для тех, кто понимает ценность уединения.' },
+  { n: 7, name: 'Нижний Новгород', date: '2026-08-14', km: 450, days: 3, desc: '450 километров красивой трассы. Город силы, рек и закатов. Волга, Ока и масштаб, который чувствуешь физически. Поездка, после которой хочется ехать дальше.' },
+  { n: 8, name: 'Biker Brothers Festival', date: '2026-08-22', km: 50, days: 2, desc: 'Всего 50 километров. Минимум формальностей — максимум своих. Музыка, движение, атмосфера дороги. Фестиваль не про мотоциклы, а про людей, которые на них ездят.' },
+  { n: 9, name: 'Кострома', date: '2026-09-05', km: 350, days: 2, desc: '350 километров спокойного хода. История, вода и тишина. Город, где не торопятся и умеют слушать. Точка перезагрузки перед осенью.' },
+  { n: 10, name: 'Крым', date: '2026-09-21', km: null, days: 7, desc: 'Не тур. Не отпуск. Мотопаломничество. Серпантин, море, горы и бесконечная дорога. Крым нельзя проехать — его нужно прожить на мотоцикле.' },
+];
+
+function getNextRoute() {
+  const today = new Date().toISOString().slice(0, 10);
+  return ROUTES.find(r => r.date >= today) || ROUTES[ROUTES.length - 1];
+}
+
+function getRouteForWeek(weekDate) {
+  // Find the route whose date is closest to this week (within 3 weeks)
+  const wStart = new Date(weekDate);
+  const wEnd = new Date(wStart); wEnd.setDate(wEnd.getDate() + 21);
+  const upcoming = ROUTES.filter(r => r.date >= weekDate && r.date <= wEnd.toISOString().slice(0, 10));
+  return upcoming[0] || getNextRoute();
+}
+
+function getSeasonProgress(dateStr) {
+  return ROUTES.map(r => {
+    const done = r.date < dateStr;
+    const next = !done && ROUTES.filter(x => x.date < dateStr || x === r).length === ROUTES.filter(x => x.date < dateStr).length + 1;
+    return { ...r, done, next: !done && r === getNextRoute() };
+  });
+}
+
 // ═══════ DB ═══════
 if (!existsSync(join(__dirname, 'data'))) mkdirSync(join(__dirname, 'data'), { recursive: true });
 const db = new Database(join(__dirname, 'data', 'ops.db'));
@@ -1079,7 +1114,10 @@ app.post('/api/scheduled/generate-week', auth, async (req, res) => {
 
     if (dayIdx === 0) slots.push({ date: dateStr, time: '11:00', rubric: 'moto_news', title: 'Дайджест мотоновостей', auto_context: 'еженедельный дайджест' });
     if (dayIdx === 1) slots.push({ date: dateStr, time: '10:00', rubric: 'kind_reminder', title: 'Напоминание о безопасности', auto_context: '' });
-    if (dayIdx === 2) slots.push({ date: dateStr, time: '11:00', rubric: 'route_series', title: 'Маршрут серии', auto_context: '' });
+    if (dayIdx === 2) {
+      const route = getRouteForWeek(dateStr);
+      slots.push({ date: dateStr, time: '11:00', rubric: 'route_series', title: `Маршрут №${route.n}: ${route.name}`, auto_context: `Маршрут №${route.n}: ${route.name}, дата: ${route.date}, ${route.km ? route.km + ' км' : ''}, ${route.days} дн. Описание: ${route.desc}` });
+    }
     if (dayIdx === 3) {
       const weekNum = Math.ceil((d.getTime() - new Date('2026-01-01').getTime()) / (7 * 24 * 60 * 60 * 1000));
       slots.push({ date: dateStr, time: '10:00', rubric: weekNum % 4 === 0 ? 'values' : 'cross_promo', title: weekNum % 4 === 0 ? 'Наши ценности' : 'Наши соцсети', auto_context: '' });
@@ -1089,11 +1127,19 @@ app.post('/api/scheduled/generate-week', auth, async (req, res) => {
       slots.push({ date: dateStr, time: '10:00', rubric: weekNum % 2 === 0 ? 'merch' : 'riddle', title: weekNum % 2 === 0 ? 'Мерч' : 'Шарада', auto_context: '' });
     }
     if (dayIdx === 5) slots.push({ date: dateStr, time: '11:00', rubric: 'trip_announce', title: 'Анонс поездки', auto_context: '' });
-    if (dayIdx === 6) slots.push({ date: dateStr, time: '11:00', rubric: 'season_calendar', title: 'Календарь сезона', auto_context: '' });
+    if (dayIdx === 6) {
+      const progress = getSeasonProgress(dateStr);
+      const progressStr = progress.map(r => `${r.done ? '✅' : r.next ? '👉' : '⬜'} ${r.n}. ${r.name} — ${r.date}${r.km ? ', ' + r.km + ' км' : ''}`).join('\n');
+      slots.push({ date: dateStr, time: '11:00', rubric: 'season_calendar', title: 'Календарь сезона', auto_context: progressStr });
+    }
 
-    // Season opening countdown (if within 8 weeks, on Monday or first day)
-    if (daysToSeason > 0 && daysToSeason <= 56 && dayIdx === 0) {
-      slots.push({ date: dateStr, time: '09:00', rubric: 'season_opening', title: `Открытие сезона через ${daysToSeason} дней!`, auto_context: `Дата: ${seasonDate}, осталось ${daysToSeason} дней` });
+    // Countdown to next route (on first day of generated week, if within 4 weeks)
+    if (dayIdx === 0 || (dateStr === todayStr)) {
+      const nextRoute = getNextRoute();
+      const daysToRoute = Math.ceil((new Date(nextRoute.date) - d) / (86400000));
+      if (daysToRoute > 0 && daysToRoute <= 28) {
+        slots.push({ date: dateStr, time: '09:00', rubric: 'season_opening', title: `${nextRoute.name} через ${daysToRoute} дней!`, auto_context: `Следующий маршрут: №${nextRoute.n} ${nextRoute.name}, дата: ${nextRoute.date}, ${nextRoute.km ? nextRoute.km + ' км' : ''}, ${nextRoute.days} дн. Осталось ${daysToRoute} дней. Описание: ${nextRoute.desc}` });
+      }
     }
   }
 
@@ -1260,7 +1306,7 @@ app.post('/api/scheduled/batch-generate', auth, async (req, res) => {
           prompt = 'Напоминание о соцсетях: TG t.me/hardlocals, VK vk.com/hardlocals.russia, Insta @hardlocals, сайт hardlocals.club. 2-3 предложения.';
           break;
         case 'merch':
-          prompt = 'Мерч Hard Locals. Заказ: t.me/casual_pumpkin, каталог: hardlocals.club/#shop. 3-4 предложения, сезон начинается.';
+          prompt = 'Мерч Hard Locals. Заказ: t.me/casual_pumpkin, каталог: https://hardlocals.club/shop#order. 3-4 предложения, сезон начинается, покажи стиль клуба.';
           break;
         case 'values':
           prompt = 'Ценности/философия клуба. Одна тема (братство/свобода/дорога/уважение). 4-6 предложений, глубоко без пафоса.';
@@ -1268,18 +1314,34 @@ app.post('/api/scheduled/batch-generate', auth, async (req, res) => {
         case 'riddle':
           prompt = 'Мото-шарада. Загадка 2-3 строки + ответ в <tg-spoiler>ответ</tg-spoiler>.';
           break;
-        case 'season_opening':
-          prompt = `Открытие сезона 23 мая 2026, осталось ${daysToSeason} дней. 3-4 предложения, энергия, обратный отсчёт.`;
+        case 'season_opening': {
+          const ctx = draft.notes || draft.title || '';
+          const nextR = getNextRoute();
+          prompt = `Пост-напоминание о ближайшем маршруте Hard Locals: №${nextR.n} ${nextR.name}, дата ${nextR.date}. ${nextR.km ? nextR.km + ' км.' : ''} ${nextR.desc}\nКонтекст: ${ctx}\n3-4 предложения, энергия, обратный отсчёт, призыв.`;
           break;
-        case 'route_series':
-          prompt = 'Анонс мотомаршрута выходного дня из Москвы (200-400 км). Куда, зачем, что смотреть, расстояние. 4-6 предложений.';
+        }
+        case 'route_series': {
+          const routeCtx = draft.notes || draft.title || '';
+          const routeNum = routeCtx.match(/№(\d+)/);
+          const route = routeNum ? ROUTES.find(r => r.n === parseInt(routeNum[1])) : getNextRoute();
+          if (route) {
+            prompt = `Анонс маршрута №${route.n}: ${route.name}. Дата: ${route.date}. ${route.km ? route.km + ' км.' : ''} ${route.days} дн. Описание: ${route.desc}\nСделай пост-анонс: заголовок, 4-6 предложений с деталями маршрута, призыв присоединиться. Используй данные маршрута.`;
+          } else {
+            prompt = 'Анонс мотомаршрута выходного дня из Москвы. 4-6 предложений.';
+          }
           break;
-        case 'trip_announce':
-          prompt = 'Анонс ближайшей поездки. Дата, маршрут, время сбора, что взять. 4-5 предложений, призыв.';
+        }
+        case 'trip_announce': {
+          const nextR = getNextRoute();
+          prompt = `Анонс ближайшей поездки Hard Locals: №${nextR.n} ${nextR.name}, дата ${nextR.date}. ${nextR.km ? nextR.km + ' км.' : ''} ${nextR.desc}\nФормат: дата, маршрут, время сбора, что взять. 4-5 предложений, призыв присоединиться.`;
           break;
-        case 'season_calendar':
-          prompt = 'Календарь сезона 2026: 1.Открытие-май, 2.Оптина Пустынь, 3.Питер, 4.Burning Wheels, 5.Суздаль, 6.Нилова Пустынь, 7.Нижний Новгород, 8.Biker Brothers, 9.Кострома, 10.Крым. Список с эмодзи, вступление, призыв.';
+        }
+        case 'season_calendar': {
+          const progress = getSeasonProgress(draft.scheduled_date);
+          const progressStr = progress.map(r => `${r.done ? '✅' : r.next ? '👉' : '⬜'} ${r.n}. ${r.name} — ${r.date}${r.km ? ', ' + r.km + ' км' : ''}`).join('\n');
+          prompt = `Пост "Календарь сезона Hard Locals 2026". Вот прогресс:\n${progressStr}\n\nСделай пост: вступление (1-2 предложения), список маршрутов с эмодзи (✅ пройден, 👉 следующий, ⬜ впереди), призыв. HTML для TG.`;
           break;
+        }
         case 'moto_news':
           prompt = 'Дайджест 3-4 мотоновости. Каждая: emoji + <b>заголовок</b> + 1-2 предложения. Финал: ссылка на канал t.me/hardlocals.';
           break;
@@ -1344,6 +1406,12 @@ app.post('/api/scheduled/run-now', auth, async (req, res) => {
   console.log('[SCHEDULER] Manual trigger');
   await runScheduler();
   res.json({ ok: true });
+});
+
+// ═══════ ROUTES API ═══════
+app.get('/api/routes', auth, (req, res) => {
+  const progress = getSeasonProgress(new Date().toISOString().slice(0, 10));
+  res.json(progress);
 });
 
 // ═══════ HISTORY ═══════
@@ -1418,7 +1486,7 @@ app.get('*', (req, res) => {
 });
 
 app.listen(PORT, '0.0.0.0', () => {
-  console.log(`\n  Hard Locals Content Ops v8.7 (approve-all + manual publish + tooltips)`);
+  console.log(`\n  Hard Locals Content Ops v9.0 (10 routes database + smart prompts + countdown)`);
   console.log(`  → http://0.0.0.0:${PORT}`);
   console.log(`  → Anthropic: ${ANTHROPIC_API_KEY ? '✓' : '✗'}`);
   console.log(`  → TG Bot: ${TG_BOT_TOKEN ? '✓' : '✗'}`);
