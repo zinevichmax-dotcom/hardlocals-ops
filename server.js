@@ -234,14 +234,20 @@ app.post('/api/media/download-url', auth, async (req, res) => {
   console.log('[YT-DLP] Download:', url);
 
   // yt-dlp with limits: max 720p, max 100MB, mp4 format for compatibility
+  const cookiesPath = join(__dirname, 'cookies.txt');
+  let hasCookies = false;
+  try { hasCookies = existsSync(cookiesPath) && statSync(cookiesPath).isFile() && statSync(cookiesPath).size > 100; } catch {}
+  if (hasCookies) console.log('[YT-DLP] Using cookies.txt');
+
   const args = [
     '--no-playlist',
     '--max-filesize', '100m',
     '--format', 'best[height<=720][ext=mp4]/best[height<=720]/best',
     '--merge-output-format', 'mp4',
     '-o', filePath,
-    url,
   ];
+  if (hasCookies) args.push('--cookies', cookiesPath);
+  args.push(url);
 
   const proc = spawn('yt-dlp', args);
   let stderr = '';
