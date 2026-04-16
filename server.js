@@ -65,6 +65,29 @@ function getSeasonProgress(dateStr) {
   }));
 }
 
+// ═══════ SHOP ITEMS (мерч с hardlocals.club/shop) ═══════
+const SHOP_ITEMS = [
+  { name: 'Бейсболка с сеткой', price: 4500, oldPrice: 5000, desc: 'Размер регулируемый', sale: true },
+  { name: 'Худи ездовая', price: 7500, oldPrice: 8500, desc: 'Плотная, тёплая, не продувается', sale: true },
+  { name: 'Худи тонкая', price: 6000, oldPrice: 6500, desc: 'Идеально для летних вечеров', sale: true },
+  { name: 'Футболка чёрная', price: 4000, oldPrice: 4500, desc: 'Хлопок, суппортовое лого на груди и спине', sale: true },
+  { name: 'Свитшот', price: 5000, oldPrice: 5500, desc: 'Лого на всю грудь и по рукавам', sale: true },
+  { name: 'Лонгслив', price: 5000, oldPrice: 5500, desc: 'Тонкий, лого во всю спину и по рукавам', sale: true },
+  { name: 'Футболка белая', price: 4000, oldPrice: 4500, desc: '', sale: true },
+  { name: 'Бафф', price: 1500, oldPrice: 1800, desc: 'One size', sale: true },
+  { name: 'Рамка мото', price: 600, desc: 'Для мотоцикла' },
+  { name: 'Рамка автомобильная', price: 1200, desc: 'Не забудь — на машину нужно 2 шт.' },
+  { name: 'Джерси ездовая', price: 4000, desc: 'Мерч для выезда в колонне' },
+  { name: 'Шапка для бани', price: 1000, desc: 'На стиле можно быть не только на байке' },
+  { name: 'Стикеры', price: 400, desc: 'На бак, на шлем, на крыло, на двери' },
+  { name: 'Шапка', price: 3500, desc: 'One size' },
+];
+
+function getRandomShopItems(n) {
+  const shuffled = [...SHOP_ITEMS].sort(() => Math.random() - 0.5);
+  return shuffled.slice(0, n);
+}
+
 // ═══════ DB ═══════
 if (!existsSync(join(__dirname, 'data'))) mkdirSync(join(__dirname, 'data'), { recursive: true });
 const db = new Database(join(__dirname, 'data', 'ops.db'));
@@ -1330,9 +1353,12 @@ app.post('/api/scheduled/batch-generate', auth, async (req, res) => {
         case 'cross_promo':
           prompt = 'Напоминание о соцсетях: TG t.me/hardlocals, VK vk.com/hardlocals.russia, Insta @hardlocals, сайт hardlocals.club. 2-3 предложения.';
           break;
-        case 'merch':
-          prompt = 'Мерч Hard Locals. Заказ: t.me/casual_pumpkin, каталог: https://hardlocals.club/shop#order. 3-4 предложения, сезон начинается, покажи стиль клуба.';
+        case 'merch': {
+          const items = getRandomShopItems(3);
+          const itemsStr = items.map(it => `${it.name} — ${it.price}₽${it.sale ? ' (было ' + it.oldPrice + '₽)' : ''}${it.desc ? '. ' + it.desc : ''}`).join('\n');
+          prompt = `Пост про мерч Hard Locals. Покажи 2-3 конкретных товара:\n${itemsStr}\n\nЗаказ: https://t.me/casual_pumpkin\nКаталог: https://hardlocals.club/shop#order\n\n3-4 предложения. Стиль — не про понты, а про своих. Сезон начинается. Вставь ссылку на заказ.`;
           break;
+        }
         case 'values':
           prompt = 'Ценности/философия клуба. Одна тема (братство/свобода/дорога/уважение). 4-6 предложений, глубоко без пафоса.';
           break;
@@ -1439,6 +1465,11 @@ app.get('/api/routes', auth, (req, res) => {
   res.json(progress);
 });
 
+// ═══════ SHOP API ═══════
+app.get('/api/shop', auth, (req, res) => {
+  res.json(SHOP_ITEMS);
+});
+
 // ═══════ HISTORY ═══════
 app.get('/api/posts', auth, (req, res) => {
   const posts = db.prepare('SELECT * FROM posts ORDER BY created_at DESC LIMIT 100').all();
@@ -1511,7 +1542,7 @@ app.get('*', (req, res) => {
 });
 
 app.listen(PORT, '0.0.0.0', () => {
-  console.log(`\n  Hard Locals Content Ops v9.2 (operator dashboard + queue status + next route)`);
+  console.log(`\n  Hard Locals Content Ops v9.3 (shop catalog 15 items + smart merch prompts)`);
   console.log(`  → http://0.0.0.0:${PORT}`);
   console.log(`  → Anthropic: ${ANTHROPIC_API_KEY ? '✓' : '✗'}`);
   console.log(`  → TG Bot: ${TG_BOT_TOKEN ? '✓' : '✗'}`);
