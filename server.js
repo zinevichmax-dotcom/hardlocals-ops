@@ -1074,44 +1074,68 @@ app.post('/api/scheduled/generate-week', auth, async (req, res) => {
     // Daily humor
     slots.push({ date: dateStr, time: '12:00', rubric: 'humor', title: `Юмор ${dayName}`, auto_context: 'мото юмор, мем, смешное видео' });
 
-    // Monday: moto_news digest
-    if (i === 0) slots.push({ date: dateStr, time: '11:00', rubric: 'moto_news', title: 'Дайджест мотоновостей', auto_context: 'еженедельный дайджест' });
+    // Weekly rubrics: assigned to preferred day, or first available if preferred is past
+    const dayIdx = (d.getDay() + 6) % 7; // 0=Mon, 1=Tue... 6=Sun
 
-    // Tuesday: kind_reminder
-    if (i === 1) slots.push({ date: dateStr, time: '10:00', rubric: 'kind_reminder', title: 'Напоминание о безопасности', auto_context: '' });
-
-    // Wednesday: route_series or trip_announce
-    if (i === 2) slots.push({ date: dateStr, time: '11:00', rubric: 'route_series', title: 'Маршрут серии', auto_context: '' });
-
-    // Thursday: cross_promo or values
-    if (i === 3) {
+    if (dayIdx === 0) slots.push({ date: dateStr, time: '11:00', rubric: 'moto_news', title: 'Дайджест мотоновостей', auto_context: 'еженедельный дайджест' });
+    if (dayIdx === 1) slots.push({ date: dateStr, time: '10:00', rubric: 'kind_reminder', title: 'Напоминание о безопасности', auto_context: '' });
+    if (dayIdx === 2) slots.push({ date: dateStr, time: '11:00', rubric: 'route_series', title: 'Маршрут серии', auto_context: '' });
+    if (dayIdx === 3) {
       const weekNum = Math.ceil((d.getTime() - new Date('2026-01-01').getTime()) / (7 * 24 * 60 * 60 * 1000));
-      if (weekNum % 4 === 0) {
-        slots.push({ date: dateStr, time: '10:00', rubric: 'values', title: 'Наши ценности', auto_context: '' });
-      } else {
-        slots.push({ date: dateStr, time: '10:00', rubric: 'cross_promo', title: 'Наши соцсети', auto_context: '' });
-      }
+      slots.push({ date: dateStr, time: '10:00', rubric: weekNum % 4 === 0 ? 'values' : 'cross_promo', title: weekNum % 4 === 0 ? 'Наши ценности' : 'Наши соцсети', auto_context: '' });
     }
-
-    // Friday: merch or riddle
-    if (i === 4) {
+    if (dayIdx === 4) {
       const weekNum = Math.ceil((d.getTime() - new Date('2026-01-01').getTime()) / (7 * 24 * 60 * 60 * 1000));
       slots.push({ date: dateStr, time: '10:00', rubric: weekNum % 2 === 0 ? 'merch' : 'riddle', title: weekNum % 2 === 0 ? 'Мерч' : 'Шарада', auto_context: '' });
     }
+    if (dayIdx === 5) slots.push({ date: dateStr, time: '11:00', rubric: 'trip_announce', title: 'Анонс поездки', auto_context: '' });
+    if (dayIdx === 6) slots.push({ date: dateStr, time: '11:00', rubric: 'season_calendar', title: 'Календарь сезона', auto_context: '' });
 
-    // Saturday: trip_digest or trip_announce
-    if (i === 5) {
-      slots.push({ date: dateStr, time: '11:00', rubric: 'trip_announce', title: 'Анонс поездки', auto_context: '' });
-    }
-
-    // Sunday: season_calendar or stories
-    if (i === 6) {
-      slots.push({ date: dateStr, time: '11:00', rubric: 'season_calendar', title: 'Календарь сезона', auto_context: '' });
-    }
-
-    // Season opening countdown (if within 8 weeks)
-    if (daysToSeason > 0 && daysToSeason <= 56 && i === 0) {
+    // Season opening countdown (if within 8 weeks, on Monday or first day)
+    if (daysToSeason > 0 && daysToSeason <= 56 && dayIdx === 0) {
       slots.push({ date: dateStr, time: '09:00', rubric: 'season_opening', title: `Открытие сезона через ${daysToSeason} дней!`, auto_context: `Дата: ${seasonDate}, осталось ${daysToSeason} дней` });
+    }
+  }
+
+  // Second pass: check which weekly rubrics were missed (their day was in the past)
+  // and assign them to the first available future day
+  const weeklyRubrics = ['moto_news', 'kind_reminder', 'route_series', 'cross_promo', 'values', 'merch', 'riddle', 'trip_announce', 'season_calendar'];
+  const assignedRubrics = new Set(slots.map(s => s.rubric));
+  // For alternating pairs: if either is assigned, both are "covered"
+  const hasCrossOrValues = assignedRubrics.has('cross_promo') || assignedRubrics.has('values');
+  const hasMerchOrRiddle = assignedRubrics.has('merch') || assignedRubrics.has('riddle');
+  const missedRubrics = weeklyRubrics.filter(r => {
+    if (r === 'cross_promo' || r === 'values') return !hasCrossOrValues;
+    if (r === 'merch' || r === 'riddle') return !hasMerchOrRiddle;
+    return !assignedRubrics.has(r);
+  });
+  // Deduplicate alternating pairs
+  const seenPairs = new Set();
+  const uniqueMissed = missedRubrics.filter(r => {
+    if (r === 'values' && seenPairs.has('cross_promo')) return false;
+    if (r === 'cross_promo') seenPairs.add('cross_promo');
+    if (r === 'riddle' && seenPairs.has('merch')) return false;
+    if (r === 'merch') seenPairs.add('merch');
+    return true;
+  });
+  
+  if (uniqueMissed.length > 0) {
+    const futureDates = [...new Set(slots.map(s => s.date))].sort();
+    const fallbackDate = futureDates[0] || todayStr;
+    const missedLabels = {
+      'moto_news': 'Дайджест мотоновостей',
+      'kind_reminder': 'Напоминание о безопасности', 
+      'route_series': 'Маршрут серии',
+      'cross_promo': 'Наши соцсети',
+      'values': 'Наши ценности',
+      'merch': 'Мерч',
+      'riddle': 'Шарада',
+      'trip_announce': 'Анонс поездки',
+      'season_calendar': 'Календарь сезона',
+    };
+    for (const rubric of uniqueMissed) {
+      slots.push({ date: fallbackDate, time: '10:00', rubric, title: missedLabels[rubric] || rubric, auto_context: '' });
+      console.log(`[PLAN] Missed rubric "${rubric}" → assigned to ${fallbackDate}`);
     }
   }
 
@@ -1361,7 +1385,7 @@ app.get('*', (req, res) => {
 });
 
 app.listen(PORT, '0.0.0.0', () => {
-  console.log(`\n  Hard Locals Content Ops v8.5 (unified editor flow + birthday fix + TZ fix)`);
+  console.log(`\n  Hard Locals Content Ops v8.6 (missed rubrics fallback + schedule from editor)`);
   console.log(`  → http://0.0.0.0:${PORT}`);
   console.log(`  → Anthropic: ${ANTHROPIC_API_KEY ? '✓' : '✗'}`);
   console.log(`  → TG Bot: ${TG_BOT_TOKEN ? '✓' : '✗'}`);

@@ -931,6 +931,19 @@ alert("Текст сохранён в календарь! Открой запи�
 });
 }
 
+function scheduleFromEditor(){
+var dateStr=prompt("На какую дату запланировать? (ГГГГ-ММ-ДД)",fmtYMD(new Date()));
+if(!dateStr)return;
+var timeStr=prompt("Время публикации? (ЧЧ:ММ)","10:00");
+if(!timeStr)return;
+var mediaPaths=attachedMediaList&&attachedMediaList.length>0?attachedMediaList.map(function(m){return m.path}).join(","):null;
+var body={scheduled_date:dateStr,scheduled_time:timeStr,rubric:rub?rub.id:"custom",title:(rub?rub.name:"Пост")+" "+dateStr,notes:"",content:text,media_path:mediaPaths,status:"ready",items:[]};
+fetch("/api/scheduled",{method:"POST",headers:{"Content-Type":"application/json",Authorization:"Bearer "+token},body:JSON.stringify(body)}).then(function(r){return r.json()}).then(function(d){
+if(d.error){alert(d.error);return}
+alert("Запланировано на "+dateStr+" "+timeStr+"! Scheduler отправит автоматически.");
+});
+}
+
 function pickImgAsAttachment(url){
 setImgPicked(url);
 fetch(url).then(function(r){return r.blob()}).then(function(blob){
@@ -1614,6 +1627,7 @@ h("div",{className:"preview-counter"+(overLimit?" over":"")},String(pt.length)+"
 h("div",{className:"copy-row"},PLATS.map(function(p){return h("button",{key:p.id,onClick:function(){copyFor(p.id)},className:"copy-btn"+(copied===p.id?" copied":"")},copied===p.id?"\u2713 "+p.name:"\u2192 "+p.name)})),
 h("div",{className:"post-row"},
 pendingDraftId&&text?h("button",{onClick:saveDraftToCalendar,className:"post-btn",style:{color:"#4ade80",borderColor:"rgba(74,222,128,0.4)",background:"rgba(74,222,128,0.08)",fontWeight:700}},"\u{1F4BE} В календарь"):null,
+!pendingDraftId&&text?h("button",{onClick:scheduleFromEditor,className:"post-btn",style:{color:"#4ade80",borderColor:"rgba(74,222,128,0.4)",background:"rgba(74,222,128,0.08)"}},"\u{1F4C5} Запланировать"):null,
 PLATS.filter(function(p){return p.canPost}).map(function(p){return h("button",{key:p.id,onClick:function(){postTo(p.id)},disabled:posting!=="",className:"post-btn",style:{color:p.color,borderColor:p.color+"44"}},posting===p.id?"Отправка...":"\u26A1 "+p.name+(attachedMediaList&&attachedMediaList.length>0?" + \u{1F4CE}"+(attachedMediaList.length>1?"\u00D7"+attachedMediaList.length:""):""))}),
 postMsg?h("span",{className:"post-status "+(postMsg==="ok"?"ok":"err")},postMsg==="ok"?"\u2713 Отправлено":postMsg):null
 )
