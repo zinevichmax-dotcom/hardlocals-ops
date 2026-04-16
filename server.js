@@ -680,7 +680,7 @@ app.get('*', (req, res) => {
 });
 
 app.listen(PORT, '0.0.0.0', () => {
-  console.log(`\n  Hard Locals Content Ops v7.2 (collected status + home + caption guard + pulsing UI)`);
+  console.log(`\n  Hard Locals Content Ops v7.3 (block editor for all rubrics)`);
   console.log(`  → http://0.0.0.0:${PORT}`);
   console.log(`  → Anthropic: ${ANTHROPIC_API_KEY ? '✓' : '✗'}`);
   console.log(`  → TG Bot: ${TG_BOT_TOKEN ? '✓' : '✗'}`);

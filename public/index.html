@@ -594,7 +594,9 @@ if(!confirm("Удалить шаблон?"))return;
 fetch("/api/templates/"+id,{method:"DELETE",headers:{Authorization:"Bearer "+token}}).then(function(){loadTemplates(rub.id)});
 }
 
-function parseIntoBlocks(txt){
+function parseIntoBlocks(txt,rubricId){
+// Moto-news has special format with headlined items
+if(rubricId==="moto_news"){
 var parts=txt.split(/\n\n+/);var header="",footer="",items=[];
 for(var i=0;i<parts.length;i++){var p=parts[i].trim();if(!p)continue;
 if(i===0&&p.indexOf("Дайджест")>=0){header=p;continue}
@@ -604,6 +606,11 @@ else if(items.length>0){items[items.length-1].content+="\n\n"+p}
 }
 return{header:header,items:items,footer:footer};
 }
+// Generic: split by double newlines = paragraphs/blocks
+var paragraphs=txt.split(/\n\n+/).map(function(p){return p.trim()}).filter(Boolean);
+var items=paragraphs.map(function(p){return{id:Math.random().toString(36).slice(2),content:p}});
+return{header:"",items:items,footer:""};
+}
 function blocksToText(b){var parts=[];if(b.header)parts.push(b.header);for(var i=0;i<b.items.length;i++)parts.push(b.items[i].content);if(b.footer)parts.push(b.footer);return parts.join("\n\n");}
 function updateBlock(id,content){var nb={header:blocks.header,footer:blocks.footer,items:blocks.items.map(function(b){return b.id===id?{id:id,content:content}:b})};setBlocks(nb);setText(blocksToText(nb));}
 function deleteBlock(id){var nb={header:blocks.header,footer:blocks.footer,items:blocks.items.filter(function(b){return b.id!==id})};setBlocks(nb);setText(blocksToText(nb));}
@@ -612,8 +619,16 @@ function hasLink(content){return content.indexOf("<a href=")>=0 || content.index
 function regenBlock(id,idx){
 setRegenIdx(idx);
 var block=blocks.items[idx];
-var prompt="Перепиши эту новость в том же формате. HTML: символ скрепки, <b>заголовок</b>, текст с <a href='URL'>глаголом</a>. Сохрани тему. Верни ТОЛЬКО новость.\n\nТекущая:\n"+block.content;
-apiCall("/api/generate",{model:"claude-sonnet-4-20250514",max_tokens:500,system:SYSTEM,messages:[{role:"user",content:prompt}],tools:[{type:"web_search_20250305",name:"web_search"}]},token).then(function(data){
+var ctx=blocks.items.map(function(b,i){return(i===idx?">>> ":"")+b.content}).join("\n\n");
+var prompt;
+if(rub&&rub.id==="moto_news"){
+prompt="Перепиши эту новость в том же формате. HTML: символ скрепки, <b>заголовок</b>, текст с <a href='URL'>глаголом</a>. Сохрани тему. Верни ТОЛЬКО новость.\n\nТекущая:\n"+block.content;
+}else{
+prompt="Перепиши этот фрагмент поста, сохранив стиль и голос бренда Hard Locals. Учитывай контекст всего поста (твой фрагмент помечен >>>):\n\n"+ctx+"\n\nВерни ТОЛЬКО новую версию помеченного фрагмента, без пояснений и других частей поста.";
+}
+var body={model:"claude-sonnet-4-20250514",max_tokens:500,system:SYSTEM,messages:[{role:"user",content:prompt}]};
+if(rub&&rub.ws)body.tools=[{type:"web_search_20250305",name:"web_search"}];
+apiCall("/api/generate",body,token).then(function(data){
 if(data.error){setRegenIdx(-1);return}
 var t="";var cc=data.content||[];for(var i=0;i<cc.length;i++){if(cc[i].type==="text")t+=cc[i].text}t=t.trim();
 if(t)updateBlock(id,t);
@@ -669,7 +684,7 @@ var t="";var cc=data.content||[];for(var i=0;i<cc.length;i++){if(cc[i].type==="t
 t=postProcess(t.trim());
 if(!t){setError("Пустой ответ");setLoading(false);return}
 setText(t);setLoading(false);
-if(rub&&rub.id==="moto_news"){setBlocks(parseIntoBlocks(t))}else{setBlocks(null)}
+setBlocks(parseIntoBlocks(t,rub.id));
 }).catch(function(e){setError(String(e.message||e));setLoading(false)})}
 
 function copyFor(pid){var t=adapt(text,pid);try{navigator.clipboard.writeText(t)}catch(e){}setCopied(pid);setTimeout(function(){setCopied("")},1800)}
@@ -1239,21 +1254,21 @@ h("button",{onClick:function(){setSaveTemplateOpen(true)},className:"btn-ghost",
 ),
 h("div",{className:"result-body"},h("textarea",{ref:taR,value:text,onChange:function(ev){setText(ev.target.value)},className:"result-textarea"})),
 blocks?h("div",{className:"panel",style:{margin:"0 22px 16px"}},
-h("div",{className:"panel-head"},"\u{1F9F1} Редактор блоков · Проверь гиперссылки"),
+h("div",{className:"panel-head"},rub&&rub.id==="moto_news"?"\u{1F9F1} Редактор блоков · Проверь гиперссылки":"\u{1F9F1} Редактор блоков ("+blocks.items.length+")"),
 h("div",{className:"panel-body"},
-blocks.items.map(function(b,idx){var noLink=!hasLink(b.content);
+blocks.items.map(function(b,idx){var noLink=rub&&rub.id==="moto_news"&&!hasLink(b.content);
 return h("div",{key:b.id,className:"block-card"+(noLink?" no-link":"")},
 h("div",{className:"block-head"},
 h("span",{className:"block-num"},"#"+(idx+1)),
 noLink?h("span",{className:"block-warn"},"\u26A0\uFE0F Нет ссылки"):null,
 h("div",{className:"block-actions"},
 h("button",{onClick:function(){regenBlock(b.id,idx)},disabled:regenIdx===idx,className:"block-btn",title:"Перегенерировать"},regenIdx===idx?"...":"\u21BB"),
-h("button",{onClick:function(){setBlockSwapIdx(blockSwapIdx===idx?-1:idx)},disabled:regenIdx===idx,className:"block-btn",title:"Заменить другой новостью",style:blockSwapIdx===idx?{background:"var(--accent)",color:"#fff"}:{}},"\u{1F504}"),
+rub&&rub.id==="moto_news"?h("button",{onClick:function(){setBlockSwapIdx(blockSwapIdx===idx?-1:idx)},disabled:regenIdx===idx,className:"block-btn",title:"Заменить другой новостью",style:blockSwapIdx===idx?{background:"var(--accent)",color:"#fff"}:{}},"\u{1F504}"):null,
 h("button",{onClick:function(){deleteBlock(b.id)},className:"block-btn danger",title:"Удалить"},"\u2715")
 )
 ),
 h("textarea",{value:b.content,onChange:function(ev){updateBlock(b.id,ev.target.value)},className:"block-textarea"}),
-blockSwapIdx===idx?h("div",{style:{marginTop:8,padding:10,background:"var(--bg)",border:"1px solid var(--line-soft)",borderRadius:6}},
+blockSwapIdx===idx&&rub&&rub.id==="moto_news"?h("div",{style:{marginTop:8,padding:10,background:"var(--bg)",border:"1px solid var(--line-soft)",borderRadius:6}},
 h("div",{style:{fontSize:10,color:"var(--text-dim)",marginBottom:8,textTransform:"uppercase",letterSpacing:"0.1em"}},"Выбери новость из ленты для замены:"),
 rssItems.length===0?h("div",{style:{textAlign:"center",color:"var(--text-dim)",fontSize:11,padding:10}},"Лента пуста. Нажми Обновить на главной."):
 h("div",{style:{display:"flex",flexDirection:"column",gap:4,maxHeight:240,overflowY:"auto"}},rssItems.slice(0,10).map(function(item,rIdx){
@@ -1268,9 +1283,11 @@ h("div",{style:{fontSize:9,color:"var(--text-dim)"}},item.source)
 ):null
 );
 }),
-h("div",{className:"add-row"},
+rub&&rub.id==="moto_news"?h("div",{className:"add-row"},
 h("input",{value:addUrl,onChange:function(ev){setAddUrl(ev.target.value)},placeholder:"https://ссылка-на-новость",className:"input"}),
 h("button",{onClick:addNewsFromUrl,disabled:!addUrl,className:"btn-secondary"},"+ Добавить")
+):h("div",{style:{marginTop:10,display:"flex",gap:8}},
+h("button",{onClick:function(){var newItems=blocks.items.concat([{id:Math.random().toString(36).slice(2),content:""}]);var nb={header:blocks.header,footer:blocks.footer,items:newItems};setBlocks(nb);setText(blocksToText(nb))},className:"btn-secondary",style:{flex:1}},"+ Добавить блок")
 )
 )
 ):null,
