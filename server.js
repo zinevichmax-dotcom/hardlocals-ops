@@ -1013,16 +1013,18 @@ app.post('/api/scheduled/generate-week', auth, async (req, res) => {
 
   // 1. Upcoming birthdays this week
   const allMembers = db.prepare('SELECT * FROM members').all();
+  console.log(`[PLAN] Members: ${allMembers.length}, with bday: ${allMembers.filter(m=>m.birthday).length}`);
   const weekBdays = allMembers.filter(m => {
     if (!m.birthday) return false;
     const bday = m.birthday.slice(5); // MM-DD
     for (let i = 0; i < 7; i++) {
       const d = new Date(startDate); d.setDate(d.getDate() + i);
       const check = (d.getMonth() + 1).toString().padStart(2, '0') + '-' + d.getDate().toString().padStart(2, '0');
-      if (bday === check) return true;
+      if (bday === check) { console.log(`[PLAN] Birthday match: ${m.name} on ${check}`); return true; }
     }
     return false;
   });
+  console.log(`[PLAN] Week birthdays: ${weekBdays.length}`);
 
   // 2. Recent posts (to avoid repetition)
   const recentPosts = db.prepare(`
@@ -1045,7 +1047,8 @@ app.post('/api/scheduled/generate-week', auth, async (req, res) => {
   // Build plan slots (only for today and future)
   const slots = [];
   const days = ['пн', 'вт', 'ср', 'чт', 'пт', 'сб', 'вс'];
-  const todayStr = new Date().toISOString().slice(0, 10);
+  const nowLocal = new Date();
+  const todayStr = nowLocal.getFullYear() + '-' + String(nowLocal.getMonth()+1).padStart(2,'0') + '-' + String(nowLocal.getDate()).padStart(2,'0');
 
   for (let i = 0; i < 7; i++) {
     const d = new Date(startDate); d.setDate(d.getDate() + i);
@@ -1358,7 +1361,7 @@ app.get('*', (req, res) => {
 });
 
 app.listen(PORT, '0.0.0.0', () => {
-  console.log(`\n  Hard Locals Content Ops v8.4 (skip past hours + calendar media + auto birthday photo)`);
+  console.log(`\n  Hard Locals Content Ops v8.5 (unified editor flow + birthday fix + TZ fix)`);
   console.log(`  → http://0.0.0.0:${PORT}`);
   console.log(`  → Anthropic: ${ANTHROPIC_API_KEY ? '✓' : '✗'}`);
   console.log(`  → TG Bot: ${TG_BOT_TOKEN ? '✓' : '✗'}`);

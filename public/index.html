@@ -895,14 +895,26 @@ function approvePost(sched){
 fetch("/api/scheduled/"+sched.id,{method:"PUT",headers:{"Content-Type":"application/json",Authorization:"Bearer "+token},body:JSON.stringify(Object.assign({},sched,{status:"ready",items:typeof sched.items==="string"?JSON.parse(sched.items||"[]"):(sched.items||[])}))}).then(function(){loadScheduled()});
 }
 
-function generateDraftContent(sched){
+function openInEditor(sched){
 var rb=null;for(var i=0;i<RUBRICS.length;i++){if(RUBRICS[i].id===sched.rubric)rb=RUBRICS[i]}
 if(!rb){alert("Рубрика не найдена");return}
 pickRubric(sched.rubric);
 setTimeout(function(){
+// Pre-fill fields from notes/context
 if(sched.notes){
 var firstFieldKey=rb.fields&&rb.fields[0]?rb.fields[0].k:null;
 if(firstFieldKey){var o={};o[firstFieldKey]=sched.notes;setFields(o)}
+}
+// Pre-fill existing content if any
+if(sched.content){
+setText(sched.content);
+setBlocks(parseIntoBlocks(sched.content,sched.rubric));
+}
+// Pre-fill media if any
+if(sched.media_path){
+var paths=sched.media_path.split(",").filter(Boolean);
+var ml=paths.map(function(p){return{path:p,preview:p,name:p.split("/").pop(),type:p.match(/\.(mp4|mov|avi|webm)$/i)?"video":"image"}});
+setAttachedMediaList(ml);
 }
 setCalendarOpen(false);
 setPendingDraftId(sched.id);
@@ -1235,7 +1247,7 @@ if(d.path){setScheduledEdit(Object.assign({},scheduledEdit,{media_path:d.path}))
 ),
 h("div",{className:"actions",style:{flexWrap:"wrap"}},
 h("button",{onClick:function(){saveScheduled(Object.assign({},scheduledEdit,{items:typeof scheduledEdit.items==="string"?JSON.parse(scheduledEdit.items||"[]"):(scheduledEdit.items||[])}))},disabled:!scheduledEdit.scheduled_date||!scheduledEdit.rubric,className:"btn-primary accent"},"\u{1F4BE} Сохранить"),
-scheduledEdit.status==="draft"?h("button",{onClick:function(){generateDraftContent(scheduledEdit)},className:"btn-primary",style:{background:"var(--bg-elev)",color:"var(--text)"}},"\u2728 Сгенерировать текст"):null,
+h("button",{onClick:function(){openInEditor(scheduledEdit)},className:"btn-primary",style:{background:"linear-gradient(135deg, var(--accent), #ff8a4c)",color:"#fff",fontWeight:700}},"\u{1F58A}\uFE0F Полный редактор"),
 scheduledEdit.content&&scheduledEdit.status!=="ready"&&scheduledEdit.status!=="sent"?h("button",{onClick:function(){approvePost(Object.assign({},scheduledEdit))},className:"btn-primary",style:{background:"rgba(74,222,128,0.2)",color:"#4ade80",border:"1px solid rgba(74,222,128,0.4)"}},"\u2705 В очередь"):null,
 h("button",{onClick:function(){setScheduledEdit(null)},className:"btn-secondary"},"Отмена")
 )
