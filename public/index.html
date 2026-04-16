@@ -427,7 +427,7 @@ var curPlat=null;
 for(var i=0;i<PLATS.length;i++){if(PLATS[i].id===plat)curPlat=PLATS[i]}
 
 useE(function(){
-if(token){apiCall("/api/auth/check",{},token).then(function(r){if(r.ok){setAuthed(true);loadUpcomingBdays();loadRSS();loadCollectedUrls()}else{localStorage.removeItem("token");setToken("")}}).catch(function(){localStorage.removeItem("token");setToken("")})}
+if(token){apiCall("/api/auth/check",{},token).then(function(r){if(r.ok){setAuthed(true);loadUpcomingBdays();loadRSS();loadCollectedUrls();loadScheduled()}else{localStorage.removeItem("token");setToken("")}}).catch(function(){localStorage.removeItem("token");setToken("")})}
 },[token]);
 
 function loadCollectedUrls(){
@@ -1456,6 +1456,59 @@ h("div",{style:{fontSize:10,color:today?"var(--accent)":"var(--text-muted)",font
 h("button",{onClick:function(){pickRubric("birthday");setTimeout(function(){useMemberForBirthday(m)},50)},className:"btn-ghost",style:{padding:"5px 10px",fontSize:10,color:"var(--accent)",flexShrink:0}},"\u21A9 В пост")
 );
 }))
+),
+// QUEUE STATUS + NEXT ROUTE
+h("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16,marginBottom:16}},
+// Queue status
+h("div",{style:{background:"var(--bg-card)",border:"1px solid var(--line-soft)",borderRadius:14,padding:24}},
+h("div",{style:{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16}},
+h("div",{style:{display:"flex",alignItems:"center",gap:10}},
+h("div",{style:{fontSize:20}},"\u{1F4E8}"),
+h("div",{style:{fontFamily:"var(--f-head)",fontSize:14,fontWeight:700}},"Очередь")
+),
+h("button",{onClick:openCalendar,className:"btn-ghost"},"Календарь \u2192")
+),
+(function(){
+var queue=scheduled.filter(function(s){return s.status==="ready"});
+var drafts=scheduled.filter(function(s){return s.status==="draft"});
+var sent=scheduled.filter(function(s){return s.status==="sent"});
+var nextPost=queue.sort(function(a,b){return(a.scheduled_date+a.scheduled_time).localeCompare(b.scheduled_date+b.scheduled_time)})[0];
+return h("div",null,
+h("div",{style:{display:"flex",gap:16,marginBottom:14}},
+h("div",{style:{textAlign:"center",flex:1}},h("div",{style:{fontSize:24,fontWeight:800,color:"#4ade80"}},queue.length),h("div",{style:{fontSize:9,color:"var(--text-dim)",textTransform:"uppercase"}},"в очереди")),
+h("div",{style:{textAlign:"center",flex:1}},h("div",{style:{fontSize:24,fontWeight:800,color:"var(--accent)"}},drafts.length),h("div",{style:{fontSize:9,color:"var(--text-dim)",textTransform:"uppercase"}},"черновики")),
+h("div",{style:{textAlign:"center",flex:1}},h("div",{style:{fontSize:24,fontWeight:800,color:"var(--text-dim)"}},sent.length),h("div",{style:{fontSize:9,color:"var(--text-dim)",textTransform:"uppercase"}},"отправлено"))
+),
+nextPost?h("div",{style:{padding:12,background:"rgba(74,222,128,0.06)",border:"1px solid rgba(74,222,128,0.15)",borderRadius:10}},
+h("div",{style:{fontSize:9,color:"#4ade80",textTransform:"uppercase",fontWeight:600,marginBottom:4}},"Следующий пост"),
+h("div",{style:{fontSize:12,fontWeight:600}},nextPost.title||(function(){var r=null;for(var j=0;j<RUBRICS.length;j++){if(RUBRICS[j].id===nextPost.rubric)r=RUBRICS[j]}return r?r.icon+" "+r.name:nextPost.rubric})()),
+h("div",{style:{fontSize:10,color:"var(--text-dim)",marginTop:2}},nextPost.scheduled_date+" в "+nextPost.scheduled_time)
+):h("div",{style:{textAlign:"center",padding:16,color:"var(--text-dim)",fontSize:11}},"Нет постов в очереди. Открой календарь.")
+);
+})()
+),
+// Next route
+h("div",{style:{background:"linear-gradient(135deg, rgba(232,93,31,0.08), rgba(232,93,31,0.02))",border:"1px solid rgba(232,93,31,0.2)",borderRadius:14,padding:24}},
+h("div",{style:{display:"flex",alignItems:"center",gap:10,marginBottom:16}},
+h("div",{style:{fontSize:20}},"\u{1F3CD}\uFE0F"),
+h("div",{style:{fontFamily:"var(--f-head)",fontSize:14,fontWeight:700}},"Следующий маршрут")
+),
+(function(){
+var nextR=null;var today=fmtYMD(new Date());
+var routes=[{n:2,name:"Оптина Пустынь",date:"2026-05-16",km:260},{n:1,name:"Открытие мотосезона",date:null,tbd:"Май 2026"},{n:3,name:"Санкт-Петербург",date:"2026-06-12",km:700},{n:4,name:"Burning Wheels",date:"2026-06-27",km:170},{n:5,name:"Суздаль",date:"2026-07-10",km:250},{n:6,name:"Нилова Пустынь",date:"2026-08-01",km:400},{n:7,name:"Нижний Новгород",date:"2026-08-14",km:450},{n:8,name:"Biker Brothers",date:"2026-08-22",km:50},{n:9,name:"Кострома",date:"2026-09-05",km:350},{n:10,name:"Крым",date:"2026-09-21",km:null}];
+for(var i=0;i<routes.length;i++){if(routes[i].date&&routes[i].date>=today){nextR=routes[i];break}}
+if(!nextR)nextR=routes[routes.length-1];
+var daysLeft=nextR.date?Math.ceil((new Date(nextR.date)-new Date())/86400000):null;
+return h("div",null,
+h("div",{style:{fontSize:18,fontWeight:800,fontFamily:"var(--f-head)",marginBottom:4}},"№"+nextR.n+". "+nextR.name),
+h("div",{style:{fontSize:12,color:"var(--text-dim)",marginBottom:12}},nextR.date||nextR.tbd||"tbd",nextR.km?" · "+nextR.km+" км":""),
+daysLeft!==null?h("div",{style:{display:"flex",alignItems:"center",gap:10}},
+h("div",{style:{fontSize:32,fontWeight:900,fontFamily:"var(--f-head)",color:"var(--accent)"}},daysLeft),
+h("div",{style:{fontSize:11,color:"var(--text-dim)"}},"дней\nосталось")
+):h("div",{style:{fontSize:12,color:"var(--text-dim)"}},"Дата уточняется")
+);
+})()
+)
 ),
 // QUICK ACTIONS
 h("div",{style:{background:"var(--bg-card)",border:"1px solid var(--line-soft)",borderRadius:14,padding:24,marginBottom:16}},
