@@ -90,12 +90,22 @@ db.exec(`
     title TEXT,
     notes TEXT,
     content TEXT,
+    items TEXT,
     status TEXT DEFAULT 'planned',
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
   );
   CREATE INDEX IF NOT EXISTS idx_scheduled_date ON scheduled(scheduled_date);
 `);
+
+// Migration: add items column
+try {
+  const cols = db.prepare("PRAGMA table_info(scheduled)").all();
+  if (!cols.find(c => c.name === 'items')) {
+    db.exec('ALTER TABLE scheduled ADD COLUMN items TEXT');
+    console.log('Migration: added items to scheduled');
+  }
+} catch (e) { console.error('Migration error:', e.message); }
 
 const adminExists = db.prepare('SELECT id FROM users WHERE username = ?').get(ADMIN_USER);
 if (!adminExists) {
@@ -608,19 +618,31 @@ app.get('/api/scheduled', auth, (req, res) => {
 });
 
 app.post('/api/scheduled', auth, (req, res) => {
-  const { scheduled_date, rubric, title, notes, content } = req.body;
+  const { scheduled_date, rubric, title, notes, content, items } = req.body;
   if (!scheduled_date || !rubric) return res.status(400).json({ error: 'scheduled_date and rubric required' });
-  const r = db.prepare('INSERT INTO scheduled (scheduled_date, rubric, title, notes, content) VALUES (?, ?, ?, ?, ?)')
-    .run(scheduled_date, rubric, title || null, notes || null, content || null);
+  const r = db.prepare('INSERT INTO scheduled (scheduled_date, rubric, title, notes, content, items) VALUES (?, ?, ?, ?, ?, ?)')
+    .run(scheduled_date, rubric, title || null, notes || null, content || null, items ? JSON.stringify(items) : null);
   res.json({ ok: true, id: r.lastInsertRowid });
 });
 
 app.put('/api/scheduled/:id', auth, (req, res) => {
-  const { scheduled_date, rubric, title, notes, content, status } = req.body;
+  const { scheduled_date, rubric, title, notes, content, items, status } = req.body;
   const id = parseInt(req.params.id);
-  db.prepare('UPDATE scheduled SET scheduled_date=?, rubric=?, title=?, notes=?, content=?, status=?, updated_at=CURRENT_TIMESTAMP WHERE id=?')
-    .run(scheduled_date, rubric, title, notes, content, status || 'planned', id);
+  db.prepare('UPDATE scheduled SET scheduled_date=?, rubric=?, title=?, notes=?, content=?, items=?, status=?, updated_at=CURRENT_TIMESTAMP WHERE id=?')
+    .run(scheduled_date, rubric, title, notes, content, items ? JSON.stringify(items) : null, status || 'planned', id);
   res.json({ ok: true });
+});
+
+// Add an item (news link) to a scheduled post
+app.post('/api/scheduled/:id/items', auth, (req, res) => {
+  const id = parseInt(req.params.id);
+  const row = db.prepare('SELECT items FROM scheduled WHERE id = ?').get(id);
+  if (!row) return res.status(404).json({ error: 'not found' });
+  let items = [];
+  try { items = row.items ? JSON.parse(row.items) : []; } catch { items = []; }
+  items.push(req.body);
+  db.prepare('UPDATE scheduled SET items=?, updated_at=CURRENT_TIMESTAMP WHERE id=?').run(JSON.stringify(items), id);
+  res.json({ ok: true, items });
 });
 
 app.delete('/api/scheduled/:id', auth, (req, res) => {
@@ -639,7 +661,7 @@ app.get('*', (req, res) => {
 });
 
 app.listen(PORT, '0.0.0.0', () => {
-  console.log(`\n  Hard Locals Content Ops v7.0 (AI image picker + attach from search)`);
+  console.log(`\n  Hard Locals Content Ops v7.1 (digest collector + block swap + single news)`);
   console.log(`  → http://0.0.0.0:${PORT}`);
   console.log(`  → Anthropic: ${ANTHROPIC_API_KEY ? '✓' : '✗'}`);
   console.log(`  → TG Bot: ${TG_BOT_TOKEN ? '✓' : '✗'}`);

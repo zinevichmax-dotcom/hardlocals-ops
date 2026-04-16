@@ -307,6 +307,9 @@ var calendarOpenS=useS(false);
 var scheduledS=useS([]);
 var scheduledEditS=useS(null);
 var calendarWeekStartS=useS(function(){var d=new Date();var day=d.getDay();var diff=d.getDate()-day+(day===0?-6:1);var m=new Date(d);m.setDate(diff);m.setHours(0,0,0,0);return m});
+var digestPickerS=useS(null);
+var singleNewsS=useS(null);
+var blockSwapIdxS=useS(-1);
 var taR=useR(null);
 
 var token=tokenS[0],setToken=tokenS[1];
@@ -356,6 +359,9 @@ var calendarOpen=calendarOpenS[0],setCalendarOpen=calendarOpenS[1];
 var scheduled=scheduledS[0],setScheduled=scheduledS[1];
 var scheduledEdit=scheduledEditS[0],setScheduledEdit=scheduledEditS[1];
 var calendarWeekStart=calendarWeekStartS[0],setCalendarWeekStart=calendarWeekStartS[1];
+var digestPicker=digestPickerS[0],setDigestPicker=digestPickerS[1];
+var singleNews=singleNewsS[0],setSingleNews=singleNewsS[1];
+var blockSwapIdx=blockSwapIdxS[0],setBlockSwapIdx=blockSwapIdxS[1];
 
 var rub=null;
 for(var i=0;i<RUBRICS.length;i++){if(RUBRICS[i].id===sel)rub=RUBRICS[i]}
@@ -380,6 +386,50 @@ function useRSSInPost(item){
 pickRubric("moto_news");
 setTimeout(function(){
 setFields({news:"- "+item.title+" ("+item.link+")"});
+},50);
+}
+
+// Open digest picker for a news item
+function openDigestPicker(item){
+// Load all planned digests
+fetch("/api/scheduled",{headers:{Authorization:"Bearer "+token}}).then(function(r){return r.json()}).then(function(d){
+var digests=(Array.isArray(d)?d:[]).filter(function(s){return s.status!=="sent"});
+setDigestPicker({item:item,digests:digests});
+});
+}
+
+// Add item to an existing digest
+function addItemToDigest(digestId,item){
+fetch("/api/scheduled/"+digestId+"/items",{method:"POST",headers:{"Content-Type":"application/json",Authorization:"Bearer "+token},body:JSON.stringify(item)}).then(function(r){return r.json()}).then(function(){
+setDigestPicker(null);
+});
+}
+
+// Create new digest with this item
+function createDigestWithItem(item){
+// Default date: next Friday
+var d=new Date();var day=d.getDay();var daysUntilFriday=(5-day+7)%7||7;
+d.setDate(d.getDate()+daysUntilFriday);
+var fmt=function(dt){var m=dt.getMonth()+1;var dd=dt.getDate();return dt.getFullYear()+"-"+(m<10?"0":"")+m+"-"+(dd<10?"0":"")+dd};
+var body={scheduled_date:fmt(d),rubric:"moto_news",title:"Дайджест мотоновостей",notes:"",content:"",items:[item]};
+fetch("/api/scheduled",{method:"POST",headers:{"Content-Type":"application/json",Authorization:"Bearer "+token},body:JSON.stringify(body)}).then(function(r){return r.json()}).then(function(){
+setDigestPicker(null);
+});
+}
+
+// Single news → full post
+function singleNewsToPost(item){setSingleNews(item);pickRubric("moto_news");setTimeout(function(){setFields({news:"Одна новость - развернуть в отдельный пост:\n\n"+item.title+"\n"+(item.description||"")+"\n\nИсточник: "+item.link})},50)}
+
+// Generate digest from collected items
+function generateFromItems(sched){
+if(!sched.items||sched.items.length===0){alert("Сначала собери новости в этот дайджест");return}
+var items=sched.items;
+var itemsText=items.map(function(it,i){return(i+1)+". "+it.title+"\n   Источник: "+it.link+(it.description?"\n   Краткое: "+it.description:"")}).join("\n\n");
+pickRubric(sched.rubric||"moto_news");
+setTimeout(function(){
+setFields({news:itemsText});
+setCalendarOpen(false);
+setScheduledEdit(null);
 },50);
 }
 
@@ -544,6 +594,18 @@ if(data.error){setRegenIdx(-1);return}
 var t="";var cc=data.content||[];for(var i=0;i<cc.length;i++){if(cc[i].type==="text")t+=cc[i].text}t=t.trim();
 if(t)updateBlock(id,t);
 setRegenIdx(-1);
+});
+}
+
+function swapBlockWithNews(idx,newsItem){
+setRegenIdx(idx);
+var block=blocks.items[idx];
+var prompt="Сделай новость для дайджеста по этой теме:\n\n"+newsItem.title+"\n"+(newsItem.description||"")+"\nИсточник: "+newsItem.link+"\n\nФормат: символ скрепки, <b>Заголовок</b>, текст 2-3 предложения с <a href='"+newsItem.link+"'>глаголом</a>. Только новость, без лишнего.";
+apiCall("/api/generate",{model:"claude-sonnet-4-20250514",max_tokens:500,system:SYSTEM,messages:[{role:"user",content:prompt}]},token).then(function(data){
+if(data.error){setRegenIdx(-1);return}
+var t="";var cc=data.content||[];for(var i=0;i<cc.length;i++){if(cc[i].type==="text")t+=cc[i].text}t=t.trim();
+if(t)updateBlock(block.id,t);
+setRegenIdx(-1);setBlockSwapIdx(-1);
 });
 }
 
@@ -746,6 +808,32 @@ h("div",{className:"history-text"},(post.content||"").slice(0,400)+(post.content
 
 return h("div",{className:"app"},
 historyModal,
+digestPicker?h("div",{className:"modal-backdrop",onClick:function(e){if(e.target===e.currentTarget)setDigestPicker(null)}},
+h("div",{className:"modal",style:{maxWidth:560}},
+h("div",{className:"modal-head"},
+h("div",null,h("div",{className:"modal-title"},"\u{1F516} В какой дайджест?"),h("div",{className:"modal-sub",style:{maxWidth:420,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}},digestPicker.item?digestPicker.item.title:"")),
+h("button",{onClick:function(){setDigestPicker(null)},className:"btn-ghost"},"Закрыть")
+),
+h("div",{className:"modal-body"},
+digestPicker.digests.length>0?h("div",{style:{marginBottom:12}},
+h("div",{style:{fontSize:10,color:"var(--text-dim)",marginBottom:8,textTransform:"uppercase",letterSpacing:"0.1em"}},"Запланированные"),
+digestPicker.digests.map(function(sched){
+var r=null;for(var i=0;i<RUBRICS.length;i++){if(RUBRICS[i].id===sched.rubric)r=RUBRICS[i]}
+var existing=[];try{existing=sched.items?JSON.parse(sched.items):[]}catch(e){}
+return h("button",{key:sched.id,onClick:function(){addItemToDigest(sched.id,digestPicker.item)},style:{width:"100%",padding:12,background:"var(--bg-elev)",border:"1px solid var(--line-soft)",borderRadius:8,marginBottom:6,display:"flex",alignItems:"center",gap:10,cursor:"pointer",textAlign:"left",color:"var(--text)"}},
+h("span",{style:{fontSize:18}},r?r.icon:"\u{1F4CC}"),
+h("div",{style:{flex:1}},
+h("div",{style:{fontSize:13,fontWeight:600,marginBottom:2}},sched.title||(r?r.name:sched.rubric)),
+h("div",{style:{fontSize:10,color:"var(--text-dim)"}},sched.scheduled_date.split("-").reverse().join(".")+" \u00B7 "+existing.length+" новостей")
+),
+h("span",{style:{fontSize:14,color:"var(--accent)"}},"+")
+);
+})
+):null,
+h("button",{onClick:function(){createDigestWithItem(digestPicker.item)},style:{width:"100%",padding:14,background:"var(--accent)",border:"none",borderRadius:8,color:"#fff",fontSize:12,fontWeight:600,cursor:"pointer"}},"+ Создать новый дайджест на ближайшую пятницу")
+)
+)
+):null,
 templatesOpen?h("div",{className:"modal-backdrop",onClick:function(e){if(e.target===e.currentTarget)setTemplatesOpen(false)}},
 h("div",{className:"modal"},
 h("div",{className:"modal-head"},
@@ -799,10 +887,37 @@ h("div",{className:"modal-body"},
 scheduledEdit?h("div",{style:{padding:14,background:"var(--bg-elev)",border:"1px solid var(--line)",borderRadius:10,marginBottom:12}},
 h("div",{className:"field"},h("div",{className:"field-label"},"Дата *"),h("input",{type:"date",className:"input",value:scheduledEdit.scheduled_date||"",onChange:function(e){setScheduledEdit(Object.assign({},scheduledEdit,{scheduled_date:e.target.value}))}})),
 h("div",{className:"field"},h("div",{className:"field-label"},"Рубрика *"),h("select",{className:"input",value:scheduledEdit.rubric||"",onChange:function(e){setScheduledEdit(Object.assign({},scheduledEdit,{rubric:e.target.value}))}},h("option",{value:""},"— выбери —"),RUBRICS.map(function(r){return h("option",{key:r.id,value:r.id},r.icon+" "+r.name)}))),
-h("div",{className:"field"},h("div",{className:"field-label"},"Заголовок / тема"),h("input",{className:"input",placeholder:"Анонс Питера",value:scheduledEdit.title||"",onChange:function(e){setScheduledEdit(Object.assign({},scheduledEdit,{title:e.target.value}))}})),
-h("div",{className:"field"},h("div",{className:"field-label"},"Заметки"),h("textarea",{className:"textarea",placeholder:"Что именно публиковать, детали, ссылки...",value:scheduledEdit.notes||"",onChange:function(e){setScheduledEdit(Object.assign({},scheduledEdit,{notes:e.target.value}))}})),
+h("div",{className:"field"},h("div",{className:"field-label"},"Заголовок / тема"),h("input",{className:"input",placeholder:"Дайджест мотоновостей",value:scheduledEdit.title||"",onChange:function(e){setScheduledEdit(Object.assign({},scheduledEdit,{title:e.target.value}))}})),
+h("div",{className:"field"},h("div",{className:"field-label"},"Заметки"),h("textarea",{className:"textarea",placeholder:"Детали, тайминг...",value:scheduledEdit.notes||"",onChange:function(e){setScheduledEdit(Object.assign({},scheduledEdit,{notes:e.target.value}))}})),
+// ITEMS SECTION
+(function(){
+var items=[];
+try{items=typeof scheduledEdit.items==="string"?JSON.parse(scheduledEdit.items):(scheduledEdit.items||[])}catch(e){items=[]}
+return h("div",{className:"field"},
+h("div",{className:"field-label",style:{display:"flex",justifyContent:"space-between",alignItems:"center"}},
+h("span",null,"\u{1F4CC} Собранные новости ("+items.length+")"),
+items.length>0?h("button",{onClick:function(){generateFromItems(Object.assign({},scheduledEdit,{items:items}))},style:{padding:"4px 10px",fontSize:10,background:"var(--accent)",color:"#fff",border:"none",borderRadius:6,cursor:"pointer"}},"\u2728 Сгенерировать пост"):null
+),
+items.length===0?h("div",{style:{padding:14,textAlign:"center",color:"var(--text-dim)",fontSize:11,background:"var(--bg)",borderRadius:8,border:"1px dashed var(--line-soft)"}},"Пока пусто. Добавляй новости из ленты на главной (кнопка \u{1F516}) или ссылки ниже"):
+h("div",{style:{display:"flex",flexDirection:"column",gap:6,marginBottom:10}},items.map(function(it,idx){
+return h("div",{key:idx,style:{padding:10,background:"var(--bg-card)",border:"1px solid var(--line-soft)",borderRadius:8,display:"flex",gap:10,alignItems:"center"}},
+it.image?h("img",{src:it.image,style:{width:40,height:40,borderRadius:6,objectFit:"cover",flexShrink:0}}):h("div",{style:{width:40,height:40,borderRadius:6,background:"var(--bg)",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",fontSize:14,opacity:0.3}},"\u{1F4F0}"),
+h("div",{style:{flex:1,minWidth:0}},
+h("div",{style:{fontSize:11,fontWeight:600,marginBottom:2,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}},it.title),
+h("div",{style:{fontSize:9,color:"var(--text-dim)"}},it.source||(it.link?it.link.slice(0,50):""))
+),
+h("button",{onClick:function(){var newItems=items.filter(function(_,i){return i!==idx});setScheduledEdit(Object.assign({},scheduledEdit,{items:newItems}))},style:{background:"transparent",border:"none",color:"var(--text-dim)",cursor:"pointer",fontSize:12,padding:4}},"\u2715")
+);
+})),
+// Add custom link
+h("div",{style:{display:"flex",gap:6}},
+h("input",{id:"add-custom-url",className:"input",placeholder:"https://ссылка на новость (своя)",style:{flex:1}}),
+h("button",{onClick:function(){var el=document.getElementById("add-custom-url");var url=el.value.trim();if(!url)return;var newItem={link:url,title:url.replace(/^https?:\/\/(www\.)?/,"").slice(0,80),source:"custom",description:"",image:null};var newItems=items.concat([newItem]);setScheduledEdit(Object.assign({},scheduledEdit,{items:newItems}));el.value=""},className:"btn-secondary",style:{padding:"10px 14px",fontSize:11}},"+ Добавить")
+)
+);
+})(),
 h("div",{className:"actions"},
-h("button",{onClick:function(){saveScheduled(scheduledEdit)},disabled:!scheduledEdit.scheduled_date||!scheduledEdit.rubric,className:"btn-primary accent"},"\u{1F4BE} Сохранить"),
+h("button",{onClick:function(){saveScheduled(Object.assign({},scheduledEdit,{items:typeof scheduledEdit.items==="string"?JSON.parse(scheduledEdit.items||"[]"):(scheduledEdit.items||[])}))},disabled:!scheduledEdit.scheduled_date||!scheduledEdit.rubric,className:"btn-primary accent"},"\u{1F4BE} Сохранить"),
 h("button",{onClick:function(){setScheduledEdit(null)},className:"btn-secondary"},"Отмена")
 )
 ):null,
@@ -985,9 +1100,10 @@ item.image?h("div",{style:{width:"100%",aspectRatio:"16/9",overflow:"hidden",bac
 h("div",{style:{padding:12,flex:1,display:"flex",flexDirection:"column"}},
 h("div",{style:{fontSize:9,color:"var(--text-dim)",marginBottom:4,textTransform:"uppercase",letterSpacing:"0.1em"}},item.source+" \u00B7 "+fmtDate(item.pubDate)),
 h("div",{style:{fontSize:12,fontWeight:600,lineHeight:1.4,marginBottom:8,color:"var(--text)",flex:1}},item.title),
-h("div",{style:{display:"flex",gap:6,marginTop:"auto"}},
-h("button",{onClick:function(){useRSSInPost(item)},className:"btn-ghost",style:{padding:"5px 10px",fontSize:10,color:"var(--accent)",flex:1}},"\u21A9 В пост"),
-h("a",{href:item.link,target:"_blank",className:"btn-ghost",style:{padding:"5px 10px",fontSize:10,textAlign:"center"}},"\u2197")
+h("div",{style:{display:"flex",gap:4,marginTop:"auto",flexWrap:"wrap"}},
+h("button",{onClick:function(){openDigestPicker(item)},className:"btn-ghost",style:{padding:"5px 8px",fontSize:10,color:"var(--accent)",flex:1,borderColor:"rgba(232,93,31,0.3)"}},"\u{1F516} В дайджест"),
+h("button",{onClick:function(){singleNewsToPost(item)},className:"btn-ghost",style:{padding:"5px 8px",fontSize:10,flex:1}},"\u{1F4DD} Пост"),
+h("a",{href:item.link,target:"_blank",className:"btn-ghost",style:{padding:"5px 8px",fontSize:10,textAlign:"center"}},"\u2197")
 )
 )
 );
@@ -1099,10 +1215,24 @@ h("span",{className:"block-num"},"#"+(idx+1)),
 noLink?h("span",{className:"block-warn"},"\u26A0\uFE0F Нет ссылки"):null,
 h("div",{className:"block-actions"},
 h("button",{onClick:function(){regenBlock(b.id,idx)},disabled:regenIdx===idx,className:"block-btn",title:"Перегенерировать"},regenIdx===idx?"...":"\u21BB"),
+h("button",{onClick:function(){setBlockSwapIdx(blockSwapIdx===idx?-1:idx)},disabled:regenIdx===idx,className:"block-btn",title:"Заменить другой новостью",style:blockSwapIdx===idx?{background:"var(--accent)",color:"#fff"}:{}},"\u{1F504}"),
 h("button",{onClick:function(){deleteBlock(b.id)},className:"block-btn danger",title:"Удалить"},"\u2715")
 )
 ),
-h("textarea",{value:b.content,onChange:function(ev){updateBlock(b.id,ev.target.value)},className:"block-textarea"})
+h("textarea",{value:b.content,onChange:function(ev){updateBlock(b.id,ev.target.value)},className:"block-textarea"}),
+blockSwapIdx===idx?h("div",{style:{marginTop:8,padding:10,background:"var(--bg)",border:"1px solid var(--line-soft)",borderRadius:6}},
+h("div",{style:{fontSize:10,color:"var(--text-dim)",marginBottom:8,textTransform:"uppercase",letterSpacing:"0.1em"}},"Выбери новость из ленты для замены:"),
+rssItems.length===0?h("div",{style:{textAlign:"center",color:"var(--text-dim)",fontSize:11,padding:10}},"Лента пуста. Нажми Обновить на главной."):
+h("div",{style:{display:"flex",flexDirection:"column",gap:4,maxHeight:240,overflowY:"auto"}},rssItems.slice(0,10).map(function(item,rIdx){
+return h("button",{key:rIdx,onClick:function(){swapBlockWithNews(idx,item)},style:{padding:8,background:"var(--bg-elev)",border:"1px solid var(--line-soft)",borderRadius:5,textAlign:"left",cursor:"pointer",color:"var(--text)",display:"flex",gap:8,alignItems:"center"}},
+item.image?h("img",{src:item.image,style:{width:32,height:32,borderRadius:4,objectFit:"cover",flexShrink:0}}):null,
+h("div",{style:{flex:1,minWidth:0}},
+h("div",{style:{fontSize:11,fontWeight:500,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",marginBottom:2}},item.title),
+h("div",{style:{fontSize:9,color:"var(--text-dim)"}},item.source)
+)
+);
+}))
+):null
 );
 }),
 h("div",{className:"add-row"},
