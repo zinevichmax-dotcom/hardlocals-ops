@@ -384,13 +384,9 @@ app.delete('/api/members/:id', auth, (req, res) => {
 
 // ═══════ RSS FEED ═══════
 const RSS_SOURCES = [
-  { name: 'Motogonki', url: 'https://motogonki.ru/rss.xml', motoOnly: true },
-  { name: '110km', url: 'https://110km.ru/rss/news/', motoOnly: false },
-  { name: 'Motor Мото', url: 'https://motor.ru/rss/moto.xml', motoOnly: true },
+  { name: 'Motogonki MotoGP', url: 'https://www.motogonki.ru/feed/motogonki_motogp.xml', motoOnly: true },
   { name: 'Motor.ru', url: 'https://motor.ru/exports/rss.xml', motoOnly: false },
-  { name: 'Bikepost', url: 'https://bikepost.ru/rss.xml', motoOnly: true },
-  { name: 'За рулём Мото', url: 'https://www.zr.ru/rss/news/moto/', motoOnly: true },
-  { name: 'Baiker', url: 'https://baiker.ru/rss/', motoOnly: true },
+  { name: '110km', url: 'https://110km.ru/rss/news/', motoOnly: false },
 ];
 
 let rssCache = { items: [], fetched: 0 };
@@ -402,30 +398,35 @@ function parseRSSItem(xml) {
     if (!m) return null;
     let val = m[1].trim();
     val = val.replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, '$1');
-    val = val.replace(/<[^>]+>/g, '').trim();
     return val;
   };
-  const getEnclosure = () => {
-    const m = xml.match(/<enclosure[^>]*url=["']([^"']+)["']/i);
-    return m ? m[1] : null;
+  const getPlain = (tag) => {
+    const val = get(tag);
+    if (!val) return null;
+    return val.replace(/<[^>]+>/g, '').trim();
   };
   const getImage = () => {
-    const enc = getEnclosure();
-    if (enc) return enc;
-    const mi = xml.match(/<media:content[^>]*url=["']([^"']+)["']/i);
-    if (mi) return mi[1];
-    const desc = xml.match(/<description[^>]*>([\s\S]*?)<\/description>/i);
-    if (desc) {
-      const imgM = desc[1].match(/<img[^>]*src=["']([^"']+)["']/i);
+    const enc = xml.match(/<enclosure[^>]*url=["']([^"']+)["']/i);
+    if (enc) return enc[1];
+    const media = xml.match(/<media:content[^>]*url=["']([^"']+)["']/i);
+    if (media) return media[1];
+    const descFull = xml.match(/<description[^>]*>([\s\S]*?)<\/description>/i);
+    if (descFull) {
+      const imgM = descFull[1].match(/<img[^>]*src=["']([^"']+)["']/i);
+      if (imgM) return imgM[1];
+    }
+    const contentFull = xml.match(/<content:encoded[^>]*>([\s\S]*?)<\/content:encoded>/i);
+    if (contentFull) {
+      const imgM = contentFull[1].match(/<img[^>]*src=["']([^"']+)["']/i);
       if (imgM) return imgM[1];
     }
     return null;
   };
   return {
-    title: get('title'),
-    link: get('link'),
-    description: get('description')?.slice(0, 200),
-    pubDate: get('pubDate'),
+    title: getPlain('title'),
+    link: getPlain('link'),
+    description: (getPlain('description') || '').slice(0, 200),
+    pubDate: getPlain('pubDate') || getPlain('pubdate'),
     image: getImage(),
   };
 }
@@ -434,7 +435,7 @@ async function fetchRSS() {
   const allItems = [];
   await Promise.all(RSS_SOURCES.map(async (src) => {
     try {
-      const res = await fetch(src.url, { signal: AbortSignal.timeout(10000) });
+      const res = await fetch(src.url, { signal: AbortSignal.timeout(10000), headers: { 'User-Agent': 'Mozilla/5.0' } });
       if (!res.ok) { console.error('RSS', src.name, 'status', res.status); return; }
       const text = await res.text();
       const itemRegex = /<item>([\s\S]*?)<\/item>/gi;
@@ -451,17 +452,17 @@ async function fetchRSS() {
     } catch (e) { console.error('RSS error', src.name, e.message); }
   }));
 
-  // Mixed sources: filter out pure-car content
   const EXCLUDE_STRONG = [
-    'haval', 'хавал', 'tank ', 'танк ', 'chery', 'черри', 'geely', 'джили',
-    'lada', 'лада', 'kia', 'киа', 'toyota', 'тойота',
+    'haval', 'хавал', 'tank ', 'chery', 'черри', 'geely', 'джили',
+    'lada', 'лада', 'kia ', 'toyota', 'тойота', 'mazda', 'мазда',
     'кроссовер', 'седан', 'хэтчбек', 'хетчбек', 'внедорожник',
-    'премиум-седан', 'спорткар', 'суперкар', 'пикап',
+    'премиум-седан', 'спорткар', 'суперкар', 'пикап', 'minivan',
   ];
   const MOTO_HINTS = [
-    'мото', 'мотоцик', 'байк', 'байкер', 'эндуро', 'скутер', 'чоппер',
+    'мото', 'мотоцик', 'байк', 'байкер', 'эндуро', 'скутер', 'чоппер', 'круизер',
     'harley', 'ducati', 'kawasaki', 'yamaha', 'motorrad', 'ktm', 'triumph',
     'aprilia', 'motogp', 'dakar', 'superbike', 'motorcycle', 'motorbike',
+    'суперкросс', 'мотокросс', 'мотогонк', 'сбирайдер', 'bmw r', 'bmw g', 'bmw f',
   ];
 
   const filtered = allItems.filter(item => {
@@ -481,63 +482,118 @@ async function fetchRSS() {
   return filtered.slice(0, 40);
 }
 
-app.get('/api/rss', auth, async (req, res) => {
-  const now = Date.now();
-  if (rssCache.items.length > 0 && now - rssCache.fetched < 10 * 60 * 1000) {
-    return res.json(rssCache.items);
+// Bikepost HTML scraper
+async function fetchBikepost() {
+  try {
+    const res = await fetch('https://bikepost.ru/blog/moto_news/', { signal: AbortSignal.timeout(10000), headers: { 'User-Agent': 'Mozilla/5.0' } });
+    if (!res.ok) return [];
+    const html = await res.text();
+    const items = [];
+    const linkRegex = /<a\s+href="(https:\/\/bikepost\.ru\/blog\/moto_news\/\d+\/[^"]+\.html)"[^>]*>([^<]+)<\/a>/gi;
+    const seen = new Set();
+    let m;
+    while ((m = linkRegex.exec(html)) !== null && items.length < 10) {
+      const url = m[1];
+      if (seen.has(url)) continue;
+      seen.add(url);
+      const title = m[2].replace(/&laquo;/g, '«').replace(/&raquo;/g, '»').replace(/&nbsp;/g, ' ').trim();
+      if (title.length < 15) continue;
+      items.push({
+        title,
+        link: url,
+        description: '',
+        pubDate: null,
+        image: null,
+        source: 'Bikepost',
+      });
+    }
+    console.log('Bikepost scrape', items.length, 'items');
+    return items;
+  } catch (e) {
+    console.error('Bikepost error', e.message);
+    return [];
   }
-  const rssItems = await fetchRSS();
-  const tgItems = await fetchTelegramChannels();
-  const merged = [...rssItems, ...tgItems];
-  merged.sort((a, b) => {
-    const da = a.pubDate ? new Date(a.pubDate).getTime() : 0;
-    const dbb = b.pubDate ? new Date(b.pubDate).getTime() : 0;
-    return dbb - da;
-  });
-  rssCache = { items: merged.slice(0, 50), fetched: now };
-  res.json(rssCache.items);
-});
+}
 
-// Telegram public channels via t.me/s/ preview
-const TG_CHANNELS = ['motorussia', 'biketoria', 'moto_ru', 'motogonki_ru'];
+// Telegram public channels
+const TG_CHANNELS = ['bikepostru', 'hardlocals', 'motonewsru', 'motobratia'];
 
 async function fetchTelegramChannels() {
   const items = [];
   await Promise.all(TG_CHANNELS.map(async (ch) => {
     try {
       const res = await fetch(`https://t.me/s/${ch}`, { signal: AbortSignal.timeout(10000), headers: { 'User-Agent': 'Mozilla/5.0' } });
-      if (!res.ok) return;
+      if (!res.ok) { console.log('TG', ch, 'status', res.status); return; }
       const html = await res.text();
-      // Extract posts
-      const postRegex = /<div class="tgme_widget_message_text[^"]*"[^>]*>([\s\S]*?)<\/div>[\s\S]*?<a class="tgme_widget_message_date"[^>]*href="([^"]+)"[^>]*>[\s\S]*?datetime="([^"]+)"/gi;
+
+      // Extract messages: each message is wrapped in tgme_widget_message_wrap
+      const msgRegex = /<div class="tgme_widget_message_wrap[^"]*"[^>]*>([\s\S]*?)<\/div>\s*<\/div>\s*<\/div>/gi;
+      // Simpler: find each message by the message bubble
+      const bubbleRegex = /<div class="tgme_widget_message[^"]*"[^>]*data-post="([^"]+)"[^>]*>([\s\S]*?)(?=<div class="tgme_widget_message[^"]*"[^>]*data-post=|<\/section>)/gi;
       let m;
       let count = 0;
-      while ((m = postRegex.exec(html)) !== null && count < 5) {
-        const textRaw = m[1].replace(/<[^>]+>/g, ' ').replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&quot;/g, '"').replace(/\s+/g, ' ').trim();
-        if (!textRaw || textRaw.length < 20) continue;
-        // Extract image if any
-        const imgRegex = new RegExp(`tgme_widget_message_date[^>]*href="${m[2].replace(/\//g, '\\/').replace(/\./g, '\\.')}"[\\s\\S]*?style="background-image:url\\(['"]([^'"]+)['"]\\)`, 'i');
-        let image = null;
-        const imgBlockRegex = /tgme_widget_message_photo_wrap[^"]*"[^>]*style="[^"]*background-image:url\(['"]([^'"]+)['"]/gi;
-        let imgM;
-        while ((imgM = imgBlockRegex.exec(html)) !== null) {
-          if (imgM.index < m.index && imgM.index > (m.index - 3000)) image = imgM[1];
+      while ((m = bubbleRegex.exec(html)) !== null && count < 5) {
+        const dataPost = m[1];
+        const body = m[2];
+        // Extract text
+        const textMatch = body.match(/<div class="tgme_widget_message_text[^"]*"[^>]*>([\s\S]*?)<\/div>/i);
+        let text = '';
+        if (textMatch) {
+          text = textMatch[1].replace(/<br\s*\/?>/gi, '\n').replace(/<[^>]+>/g, ' ')
+            .replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&quot;/g, '"')
+            .replace(/&laquo;/g, '«').replace(/&raquo;/g, '»').replace(/&#39;/g, "'")
+            .replace(/\s+/g, ' ').trim();
         }
-        items.push({
-          title: textRaw.slice(0, 120) + (textRaw.length > 120 ? '...' : ''),
-          description: textRaw.slice(0, 300),
-          link: m[2],
-          pubDate: m[3],
-          image,
-          source: `TG: @${ch}`,
-        });
-        count++;
+        // Extract image
+        let image = null;
+        const imgMatch = body.match(/tgme_widget_message_photo_wrap[^"]*"[^>]*style="[^"]*background-image:url\(['"]([^'"]+)['"]/i);
+        if (imgMatch) image = imgMatch[1];
+        // Extract date
+        const dateMatch = body.match(/datetime="([^"]+)"/i);
+        const pubDate = dateMatch ? dateMatch[1] : null;
+
+        if (text && text.length > 20) {
+          items.push({
+            title: text.slice(0, 120) + (text.length > 120 ? '...' : ''),
+            description: text.slice(0, 300),
+            link: `https://t.me/${dataPost}`,
+            pubDate,
+            image,
+            source: `TG: @${ch}`,
+          });
+          count++;
+        }
       }
       console.log('TG', ch, count, 'posts');
     } catch (e) { console.error('TG error', ch, e.message); }
   }));
   return items;
 }
+
+app.get('/api/rss', auth, async (req, res) => {
+  const now = Date.now();
+  if (rssCache.items.length > 0 && now - rssCache.fetched < 10 * 60 * 1000) {
+    return res.json(rssCache.items);
+  }
+  const [rssItems, bikepostItems, tgItems] = await Promise.all([
+    fetchRSS(),
+    fetchBikepost(),
+    fetchTelegramChannels(),
+  ]);
+  const merged = [...rssItems, ...bikepostItems, ...tgItems];
+  merged.sort((a, b) => {
+    const da = a.pubDate ? new Date(a.pubDate).getTime() : 0;
+    const dbb = b.pubDate ? new Date(b.pubDate).getTime() : 0;
+    return dbb - da;
+  });
+  rssCache = { items: merged.slice(0, 60), fetched: now };
+  res.json(rssCache.items);
+});
+
+app.post('/api/rss/refresh', auth, async (req, res) => {
+  rssCache = { items: [], fetched: 0 };
+  res.json({ ok: true });
+});
 
 // ═══════ SCHEDULED POSTS (CALENDAR) ═══════
 app.get('/api/scheduled', auth, (req, res) => {
@@ -583,7 +639,7 @@ app.get('*', (req, res) => {
 });
 
 app.listen(PORT, '0.0.0.0', () => {
-  console.log(`\n  Hard Locals Content Ops v6.8 (more RSS + TG channels)`);
+  console.log(`\n  Hard Locals Content Ops v6.9 (fixed RSS + TG + Bikepost scraper)`);
   console.log(`  → http://0.0.0.0:${PORT}`);
   console.log(`  → Anthropic: ${ANTHROPIC_API_KEY ? '✓' : '✗'}`);
   console.log(`  → TG Bot: ${TG_BOT_TOKEN ? '✓' : '✗'}`);

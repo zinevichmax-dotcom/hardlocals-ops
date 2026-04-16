@@ -366,9 +366,14 @@ useE(function(){
 if(token){apiCall("/api/auth/check",{},token).then(function(r){if(r.ok){setAuthed(true);loadUpcomingBdays();loadRSS()}else{localStorage.removeItem("token");setToken("")}}).catch(function(){localStorage.removeItem("token");setToken("")})}
 },[token]);
 
-function loadRSS(){
+function loadRSS(force){
 setRssLoading(true);
-fetch("/api/rss",{headers:{Authorization:"Bearer "+token}}).then(function(r){return r.json()}).then(function(d){setRssItems(Array.isArray(d)?d:[]);setRssLoading(false)}).catch(function(){setRssLoading(false)});
+var doLoad=function(){fetch("/api/rss",{headers:{Authorization:"Bearer "+token}}).then(function(r){return r.json()}).then(function(d){setRssItems(Array.isArray(d)?d:[]);setRssLoading(false)}).catch(function(){setRssLoading(false)})};
+if(force){
+fetch("/api/rss/refresh",{method:"POST",headers:{Authorization:"Bearer "+token}}).then(doLoad).catch(doLoad);
+}else{
+doLoad();
+}
 }
 
 function useRSSInPost(item){
@@ -939,10 +944,10 @@ h("div",{style:{display:"flex",alignItems:"center",gap:12}},
 h("div",{style:{fontSize:20}},"\u{1F4F0}"),
 h("div",null,
 h("div",{style:{fontFamily:"'Unbounded',sans-serif",fontSize:14,fontWeight:700}},"Свежие мотоновости"),
-h("div",{style:{fontSize:11,color:"var(--text-dim)"}},rssItems.length?"Motor.ru \u00B7 Motogonki \u00B7 110km \u00B7 RBC":"Загружаю...")
+h("div",{style:{fontSize:11,color:"var(--text-dim)"}},rssItems.length?"Motogonki \u00B7 Motor.ru \u00B7 110km \u00B7 Bikepost \u00B7 TG":"Загружаю...")
 )
 ),
-h("button",{onClick:loadRSS,className:"btn-ghost",disabled:rssLoading},rssLoading?"...":"\u21BB Обновить")
+h("button",{onClick:function(){loadRSS(true)},className:"btn-ghost",disabled:rssLoading},rssLoading?"...":"\u21BB Обновить")
 ),
 rssLoading&&rssItems.length===0?h("div",{style:{textAlign:"center",padding:30,color:"var(--text-dim)",fontSize:12}},"Загружаю ленту..."):
 rssItems.length===0?h("div",{style:{textAlign:"center",padding:30,color:"var(--text-dim)",fontSize:12}},"Нет новостей"):
