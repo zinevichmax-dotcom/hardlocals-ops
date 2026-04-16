@@ -3,7 +3,7 @@ import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
 import Database from 'better-sqlite3';
 import multer from 'multer';
-import { readFileSync, existsSync, mkdirSync } from 'fs';
+import { readFileSync, existsSync, mkdirSync, unlinkSync, statSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 
@@ -218,6 +218,56 @@ app.post('/api/upload', auth, upload.single('file'), (req, res) => {
     originalName: req.file.originalname,
     size: req.file.size,
     mimetype: req.file.mimetype,
+  });
+});
+
+// Download video from URL via yt-dlp (YouTube, Rutube, Vimeo, Instagram, etc.)
+app.post('/api/media/download-url', auth, async (req, res) => {
+  const { url } = req.body;
+  if (!url || typeof url !== 'string') return res.status(400).json({ error: 'URL required' });
+  if (!/^https?:\/\//.test(url)) return res.status(400).json({ error: 'Invalid URL' });
+
+  const { spawn } = await import('child_process');
+  const filename = `ytdlp-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.mp4`;
+  const filePath = join(__dirname, 'uploads', filename);
+
+  console.log('[YT-DLP] Download:', url);
+
+  // yt-dlp with limits: max 720p, max 100MB, mp4 format for compatibility
+  const args = [
+    '--no-playlist',
+    '--max-filesize', '100m',
+    '--format', 'best[height<=720][ext=mp4]/best[height<=720]/best',
+    '--merge-output-format', 'mp4',
+    '-o', filePath,
+    url,
+  ];
+
+  const proc = spawn('yt-dlp', args);
+  let stderr = '';
+  proc.stderr.on('data', (d) => { stderr += d.toString() });
+  proc.stdout.on('data', (d) => { console.log('[YT-DLP]', d.toString().trim()) });
+
+  const exitCode = await new Promise((resolve) => proc.on('close', resolve));
+
+  if (exitCode !== 0) {
+    console.error('[YT-DLP] Failed:', stderr);
+    // Clean up partial file
+    try { if (existsSync(filePath)) unlinkSync(filePath) } catch {}
+    return res.status(400).json({ error: 'Не удалось скачать видео: ' + (stderr.split('\n').filter(l => l.includes('ERROR')).pop() || 'unknown error').slice(0, 200) });
+  }
+
+  if (!existsSync(filePath)) {
+    return res.status(400).json({ error: 'Файл не создан' });
+  }
+
+  const stats = statSync(filePath);
+  console.log('[YT-DLP] Saved:', filePath, Math.round(stats.size / 1024), 'KB');
+  res.json({
+    path: `/uploads/${filename}`,
+    originalName: url.split('/').pop() || 'video.mp4',
+    size: stats.size,
+    mimetype: 'video/mp4',
   });
 });
 
@@ -822,12 +872,73 @@ app.get('/api/posts', auth, (req, res) => {
   res.json(posts);
 });
 
+// Statistics: aggregate posts by period/rubric/platform
+app.all('/api/stats', auth, (req, res) => {
+  const totalRow = db.prepare("SELECT COUNT(*) as n FROM posts WHERE status = 'sent'").get();
+  const total = totalRow?.n || 0;
+
+  // Last 7 days daily count
+  const daily = db.prepare(`
+    SELECT DATE(created_at) as day, COUNT(*) as n
+    FROM posts
+    WHERE status = 'sent' AND created_at >= datetime('now', '-7 days')
+    GROUP BY DATE(created_at)
+    ORDER BY day ASC
+  `).all();
+
+  // By rubric (last 30 days)
+  const byRubric = db.prepare(`
+    SELECT rubric, COUNT(*) as n
+    FROM posts
+    WHERE status = 'sent' AND created_at >= datetime('now', '-30 days')
+    GROUP BY rubric
+    ORDER BY n DESC
+  `).all();
+
+  // By platform (last 30 days)
+  const byPlatform = db.prepare(`
+    SELECT platform, COUNT(*) as n
+    FROM posts
+    WHERE status = 'sent' AND created_at >= datetime('now', '-30 days')
+    GROUP BY platform
+  `).all();
+
+  // With/without media (last 30 days)
+  const withMediaRow = db.prepare(`
+    SELECT
+      SUM(CASE WHEN media_path IS NOT NULL AND media_path != '' THEN 1 ELSE 0 END) as with_media,
+      SUM(CASE WHEN media_path IS NULL OR media_path = '' THEN 1 ELSE 0 END) as text_only
+    FROM posts
+    WHERE status = 'sent' AND created_at >= datetime('now', '-30 days')
+  `).get();
+
+  // This week vs last week
+  const weekCounts = db.prepare(`
+    SELECT
+      SUM(CASE WHEN created_at >= datetime('now', '-7 days') THEN 1 ELSE 0 END) as this_week,
+      SUM(CASE WHEN created_at >= datetime('now', '-14 days') AND created_at < datetime('now', '-7 days') THEN 1 ELSE 0 END) as last_week
+    FROM posts
+    WHERE status = 'sent'
+  `).get();
+
+  res.json({
+    total,
+    this_week: weekCounts?.this_week || 0,
+    last_week: weekCounts?.last_week || 0,
+    daily,
+    by_rubric: byRubric,
+    by_platform: byPlatform,
+    with_media: withMediaRow?.with_media || 0,
+    text_only: withMediaRow?.text_only || 0,
+  });
+});
+
 app.get('*', (req, res) => {
   res.sendFile(join(__dirname, 'public', 'index.html'));
 });
 
 app.listen(PORT, '0.0.0.0', () => {
-  console.log(`\n  Hard Locals Content Ops v7.6 (VK disabled, awaiting 3rd-party scheduler)`);
+  console.log(`\n  Hard Locals Content Ops v7.7 (yt-dlp video download + stats dashboard)`);
   console.log(`  → http://0.0.0.0:${PORT}`);
   console.log(`  → Anthropic: ${ANTHROPIC_API_KEY ? '✓' : '✗'}`);
   console.log(`  → TG Bot: ${TG_BOT_TOKEN ? '✓' : '✗'}`);

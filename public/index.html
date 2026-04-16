@@ -357,6 +357,9 @@ var digestPickerS=useS(null);
 var singleNewsS=useS(null);
 var blockSwapIdxS=useS(-1);
 var collectedUrlsS=useS([]);
+var videoDownloadingS=useS(false);
+var statsS=useS(null);
+var statsOpenS=useS(false);
 var taR=useR(null);
 
 var token=tokenS[0],setToken=tokenS[1];
@@ -410,6 +413,9 @@ var digestPicker=digestPickerS[0],setDigestPicker=digestPickerS[1];
 var singleNews=singleNewsS[0],setSingleNews=singleNewsS[1];
 var blockSwapIdx=blockSwapIdxS[0],setBlockSwapIdx=blockSwapIdxS[1];
 var collectedUrls=collectedUrlsS[0],setCollectedUrls=collectedUrlsS[1];
+var videoDownloading=videoDownloadingS[0],setVideoDownloading=videoDownloadingS[1];
+var stats=statsS[0],setStats=statsS[1];
+var statsOpen=statsOpenS[0],setStatsOpen=statsOpenS[1];
 
 var rub=null;
 for(var i=0;i<RUBRICS.length;i++){if(RUBRICS[i].id===sel)rub=RUBRICS[i]}
@@ -830,6 +836,26 @@ reader.readAsDataURL(file);
 });
 }
 
+function downloadVideoFromUrl(url){
+setVideoDownloading(true);
+apiCall("/api/media/download-url",{url:url},token).then(function(d){
+setVideoDownloading(false);
+if(d.error){alert("Ошибка: "+d.error);return}
+if(d.path){
+addAttachedMedia({path:d.path,preview:d.path,name:d.originalName||"video.mp4",type:"video"});
+setTimeout(function(){
+var el=document.querySelector(".media-attached-bar");
+if(el)el.scrollIntoView({behavior:"smooth",block:"center"});
+},100);
+}
+}).catch(function(e){setVideoDownloading(false);alert("Ошибка: "+e.message)});
+}
+
+function loadStats(){
+apiCall("/api/stats",{},token).then(function(d){setStats(d)});
+}
+function openStats(){setStatsOpen(true);loadStats()}
+
 function pickImgAsAttachment(url){
 setImgPicked(url);
 fetch(url).then(function(r){return r.blob()}).then(function(blob){
@@ -917,8 +943,85 @@ h("div",{className:"history-text"},(post.content||"").slice(0,400)+(post.content
 )
 ):null;
 
+var statsModal=statsOpen?h("div",{className:"modal-backdrop",onClick:function(e){if(e.target===e.currentTarget)setStatsOpen(false)}},
+h("div",{className:"modal",style:{maxWidth:640}},
+h("div",{className:"modal-head"},
+h("div",null,h("div",{className:"modal-title"},"\u{1F4CA} Статистика"),h("div",{className:"modal-sub"},"За последние 30 дней")),
+h("button",{onClick:function(){setStatsOpen(false)},className:"btn-ghost"},"Закрыть")
+),
+h("div",{className:"modal-body"},
+stats?h("div",null,
+// TOP CARDS
+h("div",{style:{display:"grid",gridTemplateColumns:"repeat(3, 1fr)",gap:10,marginBottom:20}},
+h("div",{style:{background:"var(--bg-card)",border:"1px solid var(--line-soft)",borderRadius:10,padding:16,textAlign:"center"}},
+h("div",{style:{fontSize:28,fontWeight:800,fontFamily:"var(--f-head)",color:"var(--accent)"}},stats.total),
+h("div",{style:{fontSize:10,color:"var(--text-dim)",textTransform:"uppercase",letterSpacing:"0.1em",marginTop:4}},"Всего")
+),
+h("div",{style:{background:"var(--bg-card)",border:"1px solid var(--line-soft)",borderRadius:10,padding:16,textAlign:"center"}},
+h("div",{style:{fontSize:28,fontWeight:800,fontFamily:"var(--f-head)",color:"var(--text)"}},stats.this_week),
+h("div",{style:{fontSize:10,color:"var(--text-dim)",textTransform:"uppercase",letterSpacing:"0.1em",marginTop:4}},"Эта неделя"),
+stats.last_week>0?h("div",{style:{fontSize:10,marginTop:4,color:stats.this_week>=stats.last_week?"var(--success)":"var(--danger)"}},stats.this_week>=stats.last_week?"\u2191":"\u2193"," vs ",stats.last_week," пр. нед."):null
+),
+h("div",{style:{background:"var(--bg-card)",border:"1px solid var(--line-soft)",borderRadius:10,padding:16,textAlign:"center"}},
+h("div",{style:{fontSize:28,fontWeight:800,fontFamily:"var(--f-head)",color:"var(--text)"}},stats.with_media),
+h("div",{style:{fontSize:10,color:"var(--text-dim)",textTransform:"uppercase",letterSpacing:"0.1em",marginTop:4}},"С медиа"),
+h("div",{style:{fontSize:10,color:"var(--text-dim)",marginTop:4}},stats.text_only," без медиа")
+)
+),
+// DAILY BAR CHART (last 7 days)
+stats.daily&&stats.daily.length>0?h("div",{style:{marginBottom:20}},
+h("div",{style:{fontSize:11,fontWeight:600,marginBottom:10,textTransform:"uppercase",letterSpacing:"0.05em"}},"По дням (последние 7)"),
+h("div",{style:{display:"flex",alignItems:"flex-end",gap:6,height:80}},
+(function(){
+var maxN=Math.max.apply(null,stats.daily.map(function(d){return d.n}))||1;
+return stats.daily.map(function(d,i){
+var pct=Math.round((d.n/maxN)*100);
+var dayName=["вс","пн","вт","ср","чт","пт","сб"][new Date(d.day+"T12:00:00").getDay()];
+return h("div",{key:i,style:{flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:4}},
+h("div",{style:{fontSize:10,fontWeight:600,color:"var(--text)"}},d.n),
+h("div",{style:{width:"100%",height:pct+"%",minHeight:4,background:"var(--accent)",borderRadius:4,transition:"height 0.3s"}}),
+h("div",{style:{fontSize:9,color:"var(--text-dim)"}},dayName)
+);
+});
+})()
+)
+):null,
+// BY RUBRIC
+stats.by_rubric&&stats.by_rubric.length>0?h("div",{style:{marginBottom:20}},
+h("div",{style:{fontSize:11,fontWeight:600,marginBottom:10,textTransform:"uppercase",letterSpacing:"0.05em"}},"По рубрикам (30 дней)"),
+h("div",{style:{display:"flex",flexDirection:"column",gap:4}},stats.by_rubric.map(function(r,i){
+var rb=null;for(var j=0;j<RUBRICS.length;j++){if(RUBRICS[j].id===r.rubric)rb=RUBRICS[j]}
+var maxR=stats.by_rubric[0]?stats.by_rubric[0].n:1;
+var pct=Math.round((r.n/maxR)*100);
+return h("div",{key:i,style:{display:"flex",alignItems:"center",gap:8}},
+h("div",{style:{width:120,fontSize:11,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}},rb?(rb.icon+" "+rb.name):r.rubric),
+h("div",{style:{flex:1,height:18,background:"var(--bg)",borderRadius:4,overflow:"hidden"}},
+h("div",{style:{width:pct+"%",height:"100%",background:"var(--accent)",borderRadius:4,transition:"width 0.3s",minWidth:18,display:"flex",alignItems:"center",justifyContent:"flex-end",paddingRight:6}},
+h("span",{style:{fontSize:9,fontWeight:600,color:"#fff"}},r.n)
+)
+)
+);
+}))
+):null,
+// BY PLATFORM
+stats.by_platform&&stats.by_platform.length>0?h("div",null,
+h("div",{style:{fontSize:11,fontWeight:600,marginBottom:10,textTransform:"uppercase",letterSpacing:"0.05em"}},"По платформам"),
+h("div",{style:{display:"flex",gap:12}},stats.by_platform.map(function(p,i){
+var colors={telegram:"#2AABEE",vk:"#0077FF"};
+return h("div",{key:i,style:{background:"var(--bg-card)",border:"1px solid var(--line-soft)",borderRadius:8,padding:"10px 18px",textAlign:"center"}},
+h("div",{style:{fontSize:20,fontWeight:800,color:colors[p.platform]||"var(--text)"}},p.n),
+h("div",{style:{fontSize:10,color:"var(--text-dim)",marginTop:2}},p.platform)
+);
+}))
+):null
+):h("div",{style:{textAlign:"center",padding:30,color:"var(--text-dim)"}},"Загружаю...")
+)
+)
+):null;
+
 return h("div",{className:"app"},
 historyModal,
+statsModal,
 digestPicker?h("div",{className:"modal-backdrop",onClick:function(e){if(e.target===e.currentTarget)setDigestPicker(null)}},
 h("div",{className:"modal",style:{maxWidth:560}},
 h("div",{className:"modal-head"},
@@ -1133,6 +1236,7 @@ h("div",{className:"header-right"},
 h("div",{className:"status-pill"},h("span",{className:"status-dot"}),h("span",{className:"status-text"},"API Online")),
 h("button",{onClick:openCalendar,className:"header-btn"},"\u{1F4C5} Календарь"),
 h("button",{onClick:openMembers,className:"header-btn",style:upcomingBday.some(function(m){return isBdayToday(m.birthday)})?{color:"#fff",background:"var(--accent)",borderColor:"var(--accent)",fontWeight:600}:{}},"\u{1F465} Клуб"+(upcomingBday.length>0?" \u{1F382}":"")),
+h("button",{onClick:openStats,className:"header-btn"},"\u{1F4CA} Статистика"),
 h("button",{onClick:openHistory,className:"header-btn"},"История"),
 h("button",{onClick:logout,className:"header-btn"},"Выйти")
 )
@@ -1243,6 +1347,7 @@ h("button",{onClick:function(){setImgSearch(!imgSearch);setBannerOpen(false);if(
 h("label",{htmlFor:"tools-upload-input",className:"tool-btn",style:{cursor:"pointer"}},"\u{1F4CE} Загрузить",
 h("input",{id:"tools-upload-input",type:"file",multiple:true,accept:"image/*,video/*",style:{display:"none"},onChange:function(e){handleAttachFilesUpload(e.target.files);e.target.value=""}})
 ),
+h("button",{onClick:function(){var url=prompt("Вставь ссылку на видео (YouTube, Rutube, Vimeo, Instagram, TikTok и др.):");if(url)downloadVideoFromUrl(url)},className:"tool-btn",disabled:videoDownloading,title:"Скачать видео по ссылке"},videoDownloading?"\u23F3 Качаю...":"\u{1F517} С URL"),
 banner?h("span",{className:"tool-badge"},"\u2713 Баннер сгенерирован"):null
 ),
 // ATTACHED MEDIA INDICATOR
