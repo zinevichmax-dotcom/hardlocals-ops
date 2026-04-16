@@ -256,11 +256,13 @@ app.post('/api/media/download-url', auth, async (req, res) => {
 
   const exitCode = await new Promise((resolve) => proc.on('close', resolve));
 
-  if (exitCode !== 0) {
+  if (exitCode !== 0 && !existsSync(filePath)) {
     console.error('[YT-DLP] Failed:', stderr);
-    // Clean up partial file
-    try { if (existsSync(filePath)) unlinkSync(filePath) } catch {}
     return res.status(400).json({ error: 'Не удалось скачать видео: ' + (stderr.split('\n').filter(l => l.includes('ERROR')).pop() || 'unknown error').slice(0, 200) });
+  }
+
+  if (exitCode !== 0 && existsSync(filePath)) {
+    console.log('[YT-DLP] Non-zero exit but file exists, treating as success');
   }
 
   if (!existsSync(filePath)) {

@@ -12,6 +12,6 @@ services:
       - ./uploads:/app/uploads
       - ./public:/app/public
       - ./server.js:/app/server.js
-      - ./cookies.txt:/app/cookies.txt:ro
+      - ./cookies.txt:/app/cookies.txt
     extra_hosts:
       - "host.docker.internal:host-gateway"
