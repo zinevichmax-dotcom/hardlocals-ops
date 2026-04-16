@@ -21,6 +21,7 @@ const {
   ADMIN_PASS = 'hardlocals2026',
   VK_ACCESS_TOKEN,
   VK_GROUP_ID,
+  VK_ALBUM_ID,
   UNSPLASH_KEY,
   PEXELS_KEY,
 } = process.env;
@@ -343,33 +344,10 @@ app.post('/api/post/telegram', auth, async (req, res) => {
 
 // ═══════ VK POSTING ═══════
 
-// VK album cache (find existing "HL Ops Auto" album — must be created manually in VK group)
-let vkAlbumId = null;
-
-async function vkGetAlbum() {
-  if (vkAlbumId) return vkAlbumId;
-  const ALBUM_TITLE = 'HL Ops Auto';
-
-  const getRes = await fetch(
-    `https://api.vk.com/method/photos.getAlbums?owner_id=-${VK_GROUP_ID}&access_token=${VK_ACCESS_TOKEN}&v=5.199`
-  );
-  const getData = await getRes.json();
-  if (getData.error) throw new Error('VK getAlbums: ' + getData.error.error_msg);
-  if (!getData.response || !getData.response.items) throw new Error('VK getAlbums: unexpected response');
-
-  const found = getData.response.items.find(a => a.title === ALBUM_TITLE);
-  if (!found) {
-    const available = getData.response.items.map(a => a.title).join(', ');
-    throw new Error(`Альбом "${ALBUM_TITLE}" не найден в группе. Создай альбом с таким названием в разделе Фотографии. Доступные: ${available || 'нет альбомов'}`);
-  }
-  vkAlbumId = found.id;
-  console.log('[VK] Using album', vkAlbumId, `"${ALBUM_TITLE}"`);
-  return vkAlbumId;
-}
-
-// Upload photo via album (works with community token)
+// Upload photo via album (album ID must be set in VK_ALBUM_ID env var)
 async function vkUploadPhoto(filePath) {
-  const albumId = await vkGetAlbum();
+  if (!VK_ALBUM_ID) throw new Error('VK_ALBUM_ID не задан в .env. Создай альбом в группе и укажи его ID.');
+  const albumId = VK_ALBUM_ID;
 
   // 1. Get upload server for album
   const uploadServerRes = await fetch(
@@ -849,11 +827,11 @@ app.get('*', (req, res) => {
 });
 
 app.listen(PORT, '0.0.0.0', () => {
-  console.log(`\n  Hard Locals Content Ops v7.5.2 (VK via manual album)`);
+  console.log(`\n  Hard Locals Content Ops v7.5.3 (VK with explicit album ID)`);
   console.log(`  → http://0.0.0.0:${PORT}`);
   console.log(`  → Anthropic: ${ANTHROPIC_API_KEY ? '✓' : '✗'}`);
   console.log(`  → TG Bot: ${TG_BOT_TOKEN ? '✓' : '✗'}`);
-  console.log(`  → VK: ${VK_ACCESS_TOKEN ? '✓' : '✗'}`);
+  console.log(`  → VK: ${VK_ACCESS_TOKEN ? '✓' : '✗'}${VK_ALBUM_ID ? ' (album: ' + VK_ALBUM_ID + ')' : ' (no album)'}`);
   console.log(`  → Unsplash: ${UNSPLASH_KEY ? '✓' : '✗'}`);
   console.log(`  → Pexels: ${PEXELS_KEY ? '✓' : '✗'}\n`);
 });
