@@ -58,6 +58,17 @@ db.exec(`
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
   );
   CREATE INDEX IF NOT EXISTS idx_templates_rubric ON templates(rubric);
+  CREATE TABLE IF NOT EXISTS members (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    nickname TEXT,
+    birthday TEXT,
+    bike TEXT,
+    notes TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+  CREATE INDEX IF NOT EXISTS idx_members_bday ON members(birthday);
 `);
 
 const adminExists = db.prepare('SELECT id FROM users WHERE username = ?').get(ADMIN_USER);
@@ -295,6 +306,56 @@ app.delete('/api/templates/:id', auth, (req, res) => {
   res.json({ ok: true });
 });
 
+// ═══════ MEMBERS ═══════
+app.get('/api/members', auth, (req, res) => {
+  const rows = db.prepare('SELECT * FROM members ORDER BY name').all();
+  res.json(rows);
+});
+
+app.get('/api/members/upcoming-birthdays', auth, (req, res) => {
+  // Members whose birthday is within the next 7 days (comparing month-day)
+  const rows = db.prepare('SELECT * FROM members WHERE birthday IS NOT NULL').all();
+  const today = new Date();
+  const todayMD = (today.getMonth() + 1).toString().padStart(2, '0') + '-' + today.getDate().toString().padStart(2, '0');
+  const in7 = new Date(today.getTime() + 7 * 86400000);
+  const in7MD = (in7.getMonth() + 1).toString().padStart(2, '0') + '-' + in7.getDate().toString().padStart(2, '0');
+
+  const upcoming = rows.filter(m => {
+    if (!m.birthday) return false;
+    // birthday stored as YYYY-MM-DD, extract MM-DD
+    const md = m.birthday.slice(5);
+    if (todayMD <= in7MD) {
+      return md >= todayMD && md <= in7MD;
+    } else {
+      // year boundary
+      return md >= todayMD || md <= in7MD;
+    }
+  });
+  res.json(upcoming);
+});
+
+app.post('/api/members', auth, (req, res) => {
+  const { name, nickname, birthday, bike, notes } = req.body;
+  if (!name) return res.status(400).json({ error: 'name required' });
+  const result = db.prepare('INSERT INTO members (name, nickname, birthday, bike, notes) VALUES (?, ?, ?, ?, ?)')
+    .run(name, nickname || null, birthday || null, bike || null, notes || null);
+  res.json({ ok: true, id: result.lastInsertRowid });
+});
+
+app.put('/api/members/:id', auth, (req, res) => {
+  const { name, nickname, birthday, bike, notes } = req.body;
+  const id = parseInt(req.params.id);
+  db.prepare('UPDATE members SET name = ?, nickname = ?, birthday = ?, bike = ?, notes = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?')
+    .run(name, nickname || null, birthday || null, bike || null, notes || null, id);
+  res.json({ ok: true });
+});
+
+app.delete('/api/members/:id', auth, (req, res) => {
+  const id = parseInt(req.params.id);
+  db.prepare('DELETE FROM members WHERE id = ?').run(id);
+  res.json({ ok: true });
+});
+
 // ═══════ HISTORY ═══════
 app.get('/api/posts', auth, (req, res) => {
   const posts = db.prepare('SELECT * FROM posts ORDER BY created_at DESC LIMIT 100').all();
@@ -306,7 +367,7 @@ app.get('*', (req, res) => {
 });
 
 app.listen(PORT, '0.0.0.0', () => {
-  console.log(`\n  Hard Locals Content Ops v6.1 (templates)`);
+  console.log(`\n  Hard Locals Content Ops v6.2 (members + templates)`);
   console.log(`  → http://0.0.0.0:${PORT}`);
   console.log(`  → Anthropic: ${ANTHROPIC_API_KEY ? '✓' : '✗'}`);
   console.log(`  → TG Bot: ${TG_BOT_TOKEN ? '✓' : '✗'}`);

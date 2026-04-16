@@ -297,6 +297,10 @@ var templatesS=useS([]);
 var templatesOpenS=useS(false);
 var saveTemplateOpenS=useS(false);
 var saveTemplateNameS=useS("");
+var membersOpenS=useS(false);
+var membersListS=useS([]);
+var memberEditS=useS(null);
+var upcomingBdayS=useS([]);
 var taR=useR(null);
 
 var token=tokenS[0],setToken=tokenS[1];
@@ -336,6 +340,10 @@ var templates=templatesS[0],setTemplates=templatesS[1];
 var templatesOpen=templatesOpenS[0],setTemplatesOpen=templatesOpenS[1];
 var saveTemplateOpen=saveTemplateOpenS[0],setSaveTemplateOpen=saveTemplateOpenS[1];
 var saveTemplateName=saveTemplateNameS[0],setSaveTemplateName=saveTemplateNameS[1];
+var membersOpen=membersOpenS[0],setMembersOpen=membersOpenS[1];
+var membersList=membersListS[0],setMembersList=membersListS[1];
+var memberEdit=memberEditS[0],setMemberEdit=memberEditS[1];
+var upcomingBday=upcomingBdayS[0],setUpcomingBday=upcomingBdayS[1];
 
 var rub=null;
 for(var i=0;i<RUBRICS.length;i++){if(RUBRICS[i].id===sel)rub=RUBRICS[i]}
@@ -343,8 +351,56 @@ var curPlat=null;
 for(var i=0;i<PLATS.length;i++){if(PLATS[i].id===plat)curPlat=PLATS[i]}
 
 useE(function(){
-if(token){apiCall("/api/auth/check",{},token).then(function(r){if(r.ok){setAuthed(true)}else{localStorage.removeItem("token");setToken("")}}).catch(function(){localStorage.removeItem("token");setToken("")})}
+if(token){apiCall("/api/auth/check",{},token).then(function(r){if(r.ok){setAuthed(true);loadUpcomingBdays()}else{localStorage.removeItem("token");setToken("")}}).catch(function(){localStorage.removeItem("token");setToken("")})}
 },[token]);
+
+function loadUpcomingBdays(){
+fetch("/api/members/upcoming-birthdays",{headers:{Authorization:"Bearer "+token}}).then(function(r){return r.json()}).then(function(d){setUpcomingBday(Array.isArray(d)?d:[])}).catch(function(){});
+}
+
+function loadMembers(){
+fetch("/api/members",{headers:{Authorization:"Bearer "+token}}).then(function(r){return r.json()}).then(function(d){setMembersList(Array.isArray(d)?d:[])}).catch(function(){});
+}
+
+function openMembers(){setMembersOpen(true);loadMembers()}
+
+function saveMember(m){
+var url=m.id?"/api/members/"+m.id:"/api/members";
+var method=m.id?"PUT":"POST";
+fetch(url,{method:method,headers:{"Content-Type":"application/json",Authorization:"Bearer "+token},body:JSON.stringify(m)}).then(function(r){return r.json()}).then(function(){setMemberEdit(null);loadMembers();loadUpcomingBdays()});
+}
+
+function deleteMember(id){
+if(!confirm("Удалить участника?"))return;
+fetch("/api/members/"+id,{method:"DELETE",headers:{Authorization:"Bearer "+token}}).then(function(){loadMembers();loadUpcomingBdays()});
+}
+
+function useMemberForBirthday(m){
+var fv={name:m.name+(m.nickname?" ("+m.nickname+")":"")};
+if(m.bike||m.notes){
+fv.fact=[m.bike,m.notes].filter(Boolean).join(". ");
+}
+setFields(fv);
+setMembersOpen(false);
+setMemberEdit(null);
+}
+
+function isBdayToday(birthday){
+if(!birthday)return false;
+var today=new Date();
+var md=(today.getMonth()+1).toString().padStart(2,"0")+"-"+today.getDate().toString().padStart(2,"0");
+return birthday.slice(5)===md;
+}
+
+function daysUntilBday(birthday){
+if(!birthday)return null;
+var today=new Date();
+var t=new Date(today.getFullYear(),today.getMonth(),today.getDate());
+var parts=birthday.split("-");
+var b=new Date(today.getFullYear(),parseInt(parts[1])-1,parseInt(parts[2]));
+if(b<t)b.setFullYear(today.getFullYear()+1);
+return Math.round((b-t)/86400000);
+}
 
 useE(function(){if(taR.current){taR.current.style.height="auto";taR.current.style.height=taR.current.scrollHeight+"px"}},[text]);
 
@@ -601,6 +657,54 @@ h("button",{onClick:function(){setSaveTemplateOpen(false);setSaveTemplateName(""
 )
 )
 ):null,
+membersOpen?h("div",{className:"modal-backdrop",onClick:function(e){if(e.target===e.currentTarget){setMembersOpen(false);setMemberEdit(null)}}},
+h("div",{className:"modal"},
+h("div",{className:"modal-head"},
+h("div",null,
+h("div",{className:"modal-title"},"\u{1F465} Члены клуба"),
+h("div",{className:"modal-sub"},membersList.length+" участников"+(upcomingBday.length>0?" \u00B7 "+upcomingBday.length+" именинник"+(upcomingBday.length===1?"":"ов")+" в ближайшие 7 дней":""))
+),
+h("div",{style:{display:"flex",gap:6}},
+h("button",{onClick:function(){setMemberEdit({name:"",nickname:"",birthday:"",bike:"",notes:""})},className:"btn-primary accent",style:{padding:"7px 14px",fontSize:11}},"+ Добавить"),
+h("button",{onClick:function(){setMembersOpen(false);setMemberEdit(null)},className:"btn-ghost"},"Закрыть")
+)
+),
+h("div",{className:"modal-body"},
+memberEdit?h("div",{style:{padding:14,background:"var(--bg-elev)",border:"1px solid var(--line)",borderRadius:10,marginBottom:12}},
+h("div",{className:"field"},h("div",{className:"field-label"},"Имя *"),h("input",{className:"input",placeholder:"Дмитрий",value:memberEdit.name||"",onChange:function(e){setMemberEdit(Object.assign({},memberEdit,{name:e.target.value}))}})),
+h("div",{className:"field"},h("div",{className:"field-label"},"Ник / позывной"),h("input",{className:"input",placeholder:"Dima",value:memberEdit.nickname||"",onChange:function(e){setMemberEdit(Object.assign({},memberEdit,{nickname:e.target.value}))}})),
+h("div",{className:"field"},h("div",{className:"field-label"},"Дата рождения"),h("input",{className:"input",type:"date",value:memberEdit.birthday||"",onChange:function(e){setMemberEdit(Object.assign({},memberEdit,{birthday:e.target.value}))}})),
+h("div",{className:"field"},h("div",{className:"field-label"},"Мотоцикл"),h("input",{className:"input",placeholder:"Harley Fat Boy 2018",value:memberEdit.bike||"",onChange:function(e){setMemberEdit(Object.assign({},memberEdit,{bike:e.target.value}))}})),
+h("div",{className:"field"},h("div",{className:"field-label"},"Заметки"),h("textarea",{className:"textarea",placeholder:"Один из первых. Организует выезды.",value:memberEdit.notes||"",onChange:function(e){setMemberEdit(Object.assign({},memberEdit,{notes:e.target.value}))}})),
+h("div",{className:"actions"},
+h("button",{onClick:function(){saveMember(memberEdit)},disabled:!memberEdit.name||!memberEdit.name.trim(),className:"btn-primary accent"},"\u{1F4BE} Сохранить"),
+h("button",{onClick:function(){setMemberEdit(null)},className:"btn-secondary"},"Отмена")
+)
+):null,
+membersList.length===0?h("div",{style:{textAlign:"center",color:"var(--text-dim)",padding:40,fontSize:12}},"Пока нет участников. Добавь первого."):
+membersList.map(function(m){
+var days=daysUntilBday(m.birthday);
+var today=isBdayToday(m.birthday);
+var soon=days!==null&&days<=7;
+return h("div",{key:m.id,className:"history-item",style:today?{borderColor:"var(--accent)",background:"rgba(232,93,31,0.06)"}:soon?{borderColor:"rgba(232,93,31,0.2)"}:{}},
+h("div",{className:"history-meta"},
+h("span",{style:{fontSize:13,fontWeight:600,color:"var(--text)"}},m.name),
+m.nickname?h("span",{style:{fontSize:11,color:"var(--text-muted)"}},"("+m.nickname+")"):null,
+today?h("span",{style:{fontSize:10,color:"var(--accent)",fontWeight:700}},"\u{1F382} СЕГОДНЯ!"):
+soon?h("span",{style:{fontSize:10,color:"var(--accent)"}},"\u{1F382} через "+days+" дн."):null,
+m.birthday?h("span",{style:{fontSize:10,color:"var(--text-dim)"}},m.birthday.split("-").reverse().join(".")):null,
+h("div",{style:{marginLeft:"auto",display:"flex",gap:4}},
+rub&&rub.id==="birthday"?h("button",{onClick:function(){useMemberForBirthday(m)},className:"btn-ghost",style:{padding:"4px 10px",fontSize:10,color:"var(--accent)"}},"\u21A9 В пост"):null,
+h("button",{onClick:function(){setMemberEdit(m)},className:"btn-ghost",style:{padding:"4px 10px",fontSize:10}},"\u270E"),
+h("button",{onClick:function(){deleteMember(m.id)},className:"btn-ghost",style:{padding:"4px 10px",fontSize:10,color:"var(--danger)"}},"\u2715")
+)
+),
+m.bike||m.notes?h("div",{className:"history-text"},[m.bike,m.notes].filter(Boolean).join(" \u00B7 ")):null
+);
+})
+)
+)
+):null,
 h("div",{className:"header"},
 h("div",{className:"header-left"},
 h("button",{onClick:function(){setSidebar(!sidebar)},className:"menu-btn"},"\u2630"),
@@ -608,6 +712,7 @@ h("div",{className:"brand"},h("span",{className:"brand-name"},"HARD LOCALS"),h("
 ),
 h("div",{className:"header-right"},
 h("div",{className:"status-pill"},h("span",{className:"status-dot"}),h("span",{className:"status-text"},"API Online")),
+h("button",{onClick:openMembers,className:"header-btn"},"\u{1F465} Клуб"+(upcomingBday.length>0?" \u{1F382}":"")),
 h("button",{onClick:openHistory,className:"header-btn"},"История"),
 h("button",{onClick:logout,className:"header-btn"},"Выйти")
 )
