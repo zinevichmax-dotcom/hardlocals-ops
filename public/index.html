@@ -856,6 +856,37 @@ apiCall("/api/stats",{},token).then(function(d){setStats(d)});
 }
 function openStats(){setStatsOpen(true);loadStats()}
 
+function generateWeekPlan(){
+var ws=calendarWeekStart;
+var fmt=function(d){var m=d.getMonth()+1;var dd=d.getDate();return d.getFullYear()+"-"+(m<10?"0":"")+m+"-"+(dd<10?"0":"")+dd};
+var weekStr=fmt(ws);
+if(!confirm("Сгенерировать контент-план на неделю с "+weekStr+"?"))return;
+apiCall("/api/scheduled/generate-week",{week_start:weekStr},token).then(function(d){
+if(d.error){alert(d.error);return}
+alert("Создано "+d.count+" черновиков! Открой Календарь — там всё.");
+loadScheduled();
+});
+}
+
+function approvePost(sched){
+// Change status to 'ready' — scheduler will auto-publish
+fetch("/api/scheduled/"+sched.id,{method:"PUT",headers:{"Content-Type":"application/json",Authorization:"Bearer "+token},body:JSON.stringify(Object.assign({},sched,{status:"ready",items:typeof sched.items==="string"?JSON.parse(sched.items||"[]"):(sched.items||[])}))}).then(function(){loadScheduled()});
+}
+
+function generateDraftContent(sched){
+// AI generates content for a draft based on rubric + title + notes
+var rb=null;for(var i=0;i<RUBRICS.length;i++){if(RUBRICS[i].id===sched.rubric)rb=RUBRICS[i]}
+if(!rb){alert("Рубрика не найдена");return}
+// Navigate to rubric editor with context
+pickRubric(sched.rubric);
+setTimeout(function(){
+if(sched.notes)setFields(function(prev){var o=Object.assign({},prev);if(rb.fields&&rb.fields[0])o[rb.fields[0].k]=sched.notes;return o});
+setCalendarOpen(false);
+// Store draft ID so we can save back after generation
+window._pendingDraftId=sched.id;
+},50);
+}
+
 function pickImgAsAttachment(url){
 setImgPicked(url);
 fetch(url).then(function(r){return r.blob()}).then(function(blob){
@@ -1090,7 +1121,8 @@ calendarOpen?h("div",{className:"modal-backdrop",onClick:function(e){if(e.target
 h("div",{className:"modal",style:{maxWidth:1000}},
 h("div",{className:"modal-head"},
 h("div",null,h("div",{className:"modal-title"},"\u{1F4C5} Контент-календарь"),h("div",{className:"modal-sub"},"Планирование публикаций")),
-h("div",{style:{display:"flex",gap:6}},
+h("div",{style:{display:"flex",gap:6,alignItems:"center"}},
+h("button",{onClick:generateWeekPlan,className:"btn-primary accent",style:{padding:"7px 14px",fontSize:11}},"\u{1F4C5} План на неделю"),
 h("button",{onClick:function(){var d=new Date(calendarWeekStart);d.setDate(d.getDate()-7);setCalendarWeekStart(d);setTimeout(loadScheduled,50)},className:"btn-ghost"},"\u2190"),
 h("button",{onClick:function(){var d=new Date();var day=d.getDay();var diff=d.getDate()-day+(day===0?-6:1);var m=new Date(d);m.setDate(diff);m.setHours(0,0,0,0);setCalendarWeekStart(m);setTimeout(loadScheduled,50)},className:"btn-ghost"},"Сегодня"),
 h("button",{onClick:function(){var d=new Date(calendarWeekStart);d.setDate(d.getDate()+7);setCalendarWeekStart(d);setTimeout(loadScheduled,50)},className:"btn-ghost"},"\u2192"),
@@ -1100,6 +1132,15 @@ h("button",{onClick:function(){setCalendarOpen(false);setScheduledEdit(null)},cl
 h("div",{className:"modal-body"},
 scheduledEdit?h("div",{style:{padding:14,background:"var(--bg-elev)",border:"1px solid var(--line)",borderRadius:10,marginBottom:12}},
 h("div",{className:"field"},h("div",{className:"field-label"},"Дата *"),h("input",{type:"date",className:"input",value:scheduledEdit.scheduled_date||"",onChange:function(e){setScheduledEdit(Object.assign({},scheduledEdit,{scheduled_date:e.target.value}))}})),
+h("div",{className:"field"},h("div",{className:"field-label"},"Время публикации"),h("input",{type:"time",className:"input",value:scheduledEdit.scheduled_time||"10:00",onChange:function(e){setScheduledEdit(Object.assign({},scheduledEdit,{scheduled_time:e.target.value}))}})),
+h("div",{className:"field"},h("div",{className:"field-label"},"Статус"),
+h("div",{style:{display:"flex",gap:6,flexWrap:"wrap"}},
+["draft","ready","sent"].map(function(st){
+var labels={draft:"✏️ Черновик",ready:"⏳ В очередь",sent:"✅ Отправлен"};
+var active=scheduledEdit.status===st;
+return h("button",{key:st,onClick:function(){setScheduledEdit(Object.assign({},scheduledEdit,{status:st}))},style:{padding:"6px 12px",fontSize:10,fontWeight:active?700:400,background:active?"var(--accent)":"var(--bg)",color:active?"#fff":"var(--text-dim)",border:"1px solid "+(active?"var(--accent)":"var(--line-soft)"),borderRadius:6,cursor:"pointer"}},labels[st]);
+})
+)),
 h("div",{className:"field"},h("div",{className:"field-label"},"Рубрика *"),h("select",{className:"input",value:scheduledEdit.rubric||"",onChange:function(e){setScheduledEdit(Object.assign({},scheduledEdit,{rubric:e.target.value}))}},h("option",{value:""},"— выбери —"),RUBRICS.map(function(r){return h("option",{key:r.id,value:r.id},r.icon+" "+r.name)}))),
 h("div",{className:"field"},h("div",{className:"field-label"},"Заголовок / тема"),h("input",{className:"input",placeholder:"Дайджест мотоновостей",value:scheduledEdit.title||"",onChange:function(e){setScheduledEdit(Object.assign({},scheduledEdit,{title:e.target.value}))}})),
 h("div",{className:"field"},h("div",{className:"field-label"},"Заметки"),h("textarea",{className:"textarea",placeholder:"Детали, тайминг...",value:scheduledEdit.notes||"",onChange:function(e){setScheduledEdit(Object.assign({},scheduledEdit,{notes:e.target.value}))}})),
@@ -1130,8 +1171,10 @@ h("button",{onClick:function(){var el=document.getElementById("add-custom-url");
 )
 );
 })(),
-h("div",{className:"actions"},
+h("div",{className:"actions",style:{flexWrap:"wrap"}},
 h("button",{onClick:function(){saveScheduled(Object.assign({},scheduledEdit,{items:typeof scheduledEdit.items==="string"?JSON.parse(scheduledEdit.items||"[]"):(scheduledEdit.items||[])}))},disabled:!scheduledEdit.scheduled_date||!scheduledEdit.rubric,className:"btn-primary accent"},"\u{1F4BE} Сохранить"),
+scheduledEdit.status==="draft"?h("button",{onClick:function(){generateDraftContent(scheduledEdit)},className:"btn-primary",style:{background:"var(--bg-elev)",color:"var(--text)"}},"\u2728 Сгенерировать текст"):null,
+scheduledEdit.status==="draft"&&scheduledEdit.content?h("button",{onClick:function(){approvePost(scheduledEdit)},className:"btn-primary",style:{background:"rgba(74,222,128,0.2)",color:"#4ade80",border:"1px solid rgba(74,222,128,0.4)"}},"\u2705 В очередь"):null,
 h("button",{onClick:function(){setScheduledEdit(null)},className:"btn-secondary"},"Отмена")
 )
 ):null,
@@ -1148,10 +1191,15 @@ var dayName=["Пн","Вт","Ср","Чт","Пт","Сб","Вс"][(d.getDay()+6)%7]
 days.push(h("div",{key:i,style:{background:isToday?"rgba(232,93,31,0.08)":"var(--bg-elev)",border:"1px solid "+(isToday?"var(--accent)":"var(--line-soft)"),borderRadius:8,padding:8,minHeight:100,cursor:"pointer",display:"flex",flexDirection:"column",gap:4},onClick:function(ev){if(ev.target===ev.currentTarget||ev.target.classList.contains("day-header")){setScheduledEdit({scheduled_date:ymd,rubric:"",title:"",notes:""})}}},
 h("div",{className:"day-header",style:{fontSize:10,color:isToday?"var(--accent)":"var(--text-dim)",fontWeight:isToday?700:500,textTransform:"uppercase",letterSpacing:"0.05em",pointerEvents:"none"}},dayName+" \u00B7 "+d.getDate()+"."+((d.getMonth()+1)<10?"0":"")+(d.getMonth()+1)),
 dayPosts.map(function(p){var r=null;for(var j=0;j<RUBRICS.length;j++){if(RUBRICS[j].id===p.rubric)r=RUBRICS[j]}
-return h("div",{key:p.id,style:{background:"var(--bg-card)",border:"1px solid var(--line-soft)",borderRadius:5,padding:"4px 6px",fontSize:10,cursor:"pointer",display:"flex",alignItems:"center",gap:4},onClick:function(e){e.stopPropagation();setScheduledEdit(p)}},
-h("span",null,r?r.icon:"\u{1F4CC}"),
-h("span",{style:{flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",color:"var(--text)"}},p.title||(r?r.name:p.rubric)),
-h("button",{onClick:function(e){e.stopPropagation();deleteScheduled(p.id)},style:{background:"transparent",border:"none",color:"var(--text-dim)",cursor:"pointer",padding:0,fontSize:10}},"\u2715")
+var statusColors={draft:"var(--line)",ready:"rgba(74,222,128,0.5)",sent:"rgba(74,222,128,0.8)",sending:"var(--accent)",error:"var(--danger)"};
+var statusIcons={draft:"\u270F",ready:"\u23F3",sent:"\u2705",sending:"\u{1F504}",error:"\u26A0"};
+var st=p.status||"planned";
+return h("div",{key:p.id,style:{background:"var(--bg-card)",borderLeft:"3px solid "+(statusColors[st]||"var(--line-soft)"),borderRadius:5,padding:"4px 6px",fontSize:10,cursor:"pointer",display:"flex",alignItems:"center",gap:4},onClick:function(e){e.stopPropagation();setScheduledEdit(p)}},
+h("span",{title:st},statusIcons[st]||""),
+h("span",null,r?r.icon:""),
+h("span",{style:{flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",color:st==="sent"?"var(--text-dim)":"var(--text)"}},p.scheduled_time?(p.scheduled_time+" "):"",p.title||(r?r.name:p.rubric)),
+st==="draft"&&p.content?h("button",{onClick:function(e){e.stopPropagation();approvePost(p)},style:{background:"rgba(74,222,128,0.2)",border:"1px solid rgba(74,222,128,0.4)",borderRadius:4,color:"#4ade80",cursor:"pointer",padding:"2px 5px",fontSize:9,fontWeight:600},title:"В очередь"},"\u2713"):null,
+st!=="sent"?h("button",{onClick:function(e){e.stopPropagation();deleteScheduled(p.id)},style:{background:"transparent",border:"none",color:"var(--text-dim)",cursor:"pointer",padding:0,fontSize:10}},"\u2715"):null
 );
 }),
 dayPosts.length===0?h("div",{className:"day-header",style:{fontSize:9,color:"var(--text-dim)",opacity:0.4,pointerEvents:"none"}},"\u2014"):null

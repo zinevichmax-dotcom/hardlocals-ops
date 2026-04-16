@@ -106,7 +106,116 @@ try {
     db.exec('ALTER TABLE scheduled ADD COLUMN items TEXT');
     console.log('Migration: added items to scheduled');
   }
+  if (!cols.find(c => c.name === 'scheduled_time')) {
+    db.exec("ALTER TABLE scheduled ADD COLUMN scheduled_time TEXT DEFAULT '10:00'");
+    console.log('Migration: added scheduled_time to scheduled');
+  }
+  if (!cols.find(c => c.name === 'media_path')) {
+    db.exec('ALTER TABLE scheduled ADD COLUMN media_path TEXT');
+    console.log('Migration: added media_path to scheduled');
+  }
 } catch (e) { console.error('Migration error:', e.message); }
+
+// ═══════ AUTO-SCHEDULER (CRON) ═══════
+// Checks every 5 minutes for posts with status='ready' and scheduled_date+time <= now
+async function runScheduler() {
+  const now = new Date();
+  const todayStr = now.toISOString().slice(0, 10); // YYYY-MM-DD
+  const timeStr = now.toTimeString().slice(0, 5);   // HH:MM
+
+  const readyPosts = db.prepare(`
+    SELECT * FROM scheduled
+    WHERE status = 'ready'
+    AND (scheduled_date < ? OR (scheduled_date = ? AND scheduled_time <= ?))
+  `).all(todayStr, todayStr, timeStr);
+
+  if (readyPosts.length === 0) return;
+  console.log(`[SCHEDULER] Found ${readyPosts.length} posts to publish`);
+
+  for (const post of readyPosts) {
+    try {
+      db.prepare("UPDATE scheduled SET status = 'sending' WHERE id = ?").run(post.id);
+      const text = post.content;
+      if (!text) {
+        db.prepare("UPDATE scheduled SET status = 'error', notes = ? WHERE id = ?").run('Нет текста поста', post.id);
+        continue;
+      }
+
+      const apiBase = `${TG_LOCAL_API}/bot${TG_BOT_TOKEN}`;
+      const mediaPaths = post.media_path ? post.media_path.split(',').filter(Boolean) : [];
+      let ok = false;
+      let msgId = null;
+
+      if (mediaPaths.length === 0) {
+        // Text only
+        const result = await fetch(`${apiBase}/sendMessage`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ chat_id: TG_CHANNEL_ID, text, parse_mode: 'HTML', disable_web_page_preview: false }),
+        });
+        const data = await result.json();
+        ok = data.ok;
+        msgId = data.result?.message_id;
+        if (!ok) console.error('[SCHEDULER] TG error:', data.description);
+      } else if (mediaPaths.length === 1) {
+        // Single media
+        const p = mediaPaths[0];
+        const filePath = join(__dirname, p.replace(/^\//, ''));
+        if (!existsSync(filePath)) { console.error('[SCHEDULER] File not found:', p); ok = false; }
+        else {
+          const isVideo = p.match(/\.(mp4|mov|avi|webm)$/i);
+          const fd = new FormData();
+          fd.append('chat_id', TG_CHANNEL_ID);
+          fd.append('caption', text);
+          fd.append('parse_mode', 'HTML');
+          fd.append(isVideo ? 'video' : 'photo', new Blob([readFileSync(filePath)]), isVideo ? 'video.mp4' : 'photo.jpg');
+          const result = await fetch(`${apiBase}/${isVideo ? 'sendVideo' : 'sendPhoto'}`, { method: 'POST', body: fd });
+          const data = await result.json();
+          ok = data.ok;
+          msgId = data.result?.message_id;
+          if (!ok) console.error('[SCHEDULER] TG media error:', data.description);
+        }
+      } else {
+        // Media group
+        const fd = new FormData();
+        fd.append('chat_id', TG_CHANNEL_ID);
+        const mediaArr = [];
+        mediaPaths.forEach((p, i) => {
+          const filePath = join(__dirname, p.replace(/^\//, ''));
+          if (!existsSync(filePath)) return;
+          const isVideo = p.match(/\.(mp4|mov|avi|webm)$/i);
+          fd.append(`file${i}`, new Blob([readFileSync(filePath)]), isVideo ? `video${i}.mp4` : `photo${i}.jpg`);
+          const item = { type: isVideo ? 'video' : 'photo', media: `attach://file${i}` };
+          if (i === 0 && text) { item.caption = text; item.parse_mode = 'HTML'; }
+          mediaArr.push(item);
+        });
+        fd.append('media', JSON.stringify(mediaArr));
+        const result = await fetch(`${apiBase}/sendMediaGroup`, { method: 'POST', body: fd });
+        const data = await result.json();
+        ok = data.ok;
+        if (!ok) console.error('[SCHEDULER] TG group error:', data.description);
+      }
+
+      if (ok) {
+        db.prepare("UPDATE scheduled SET status = 'sent', updated_at = CURRENT_TIMESTAMP WHERE id = ?").run(post.id);
+        db.prepare('INSERT INTO posts (rubric, content, platform, status, media_path) VALUES (?, ?, ?, ?, ?)').run(
+          post.rubric || 'unknown', text, 'telegram', 'sent', post.media_path || null
+        );
+        console.log(`[SCHEDULER] Published #${post.id}: "${post.title || post.rubric}"`);
+      } else {
+        db.prepare("UPDATE scheduled SET status = 'error', updated_at = CURRENT_TIMESTAMP WHERE id = ?").run(post.id);
+      }
+    } catch (e) {
+      console.error(`[SCHEDULER] Error publishing #${post.id}:`, e.message);
+      db.prepare("UPDATE scheduled SET status = 'error', notes = ? WHERE id = ?").run(e.message, post.id);
+    }
+  }
+}
+
+// Run scheduler every 5 minutes
+setInterval(runScheduler, 5 * 60 * 1000);
+// Also run once on startup after 30 seconds
+setTimeout(runScheduler, 30 * 1000);
 
 const adminExists = db.prepare('SELECT id FROM users WHERE username = ?').get(ADMIN_USER);
 if (!adminExists) {
@@ -835,10 +944,10 @@ app.post('/api/scheduled', auth, (req, res) => {
 });
 
 app.put('/api/scheduled/:id', auth, (req, res) => {
-  const { scheduled_date, rubric, title, notes, content, items, status } = req.body;
+  const { scheduled_date, scheduled_time, rubric, title, notes, content, items, status, media_path } = req.body;
   const id = parseInt(req.params.id);
-  db.prepare('UPDATE scheduled SET scheduled_date=?, rubric=?, title=?, notes=?, content=?, items=?, status=?, updated_at=CURRENT_TIMESTAMP WHERE id=?')
-    .run(scheduled_date, rubric, title, notes, content, items ? JSON.stringify(items) : null, status || 'planned', id);
+  db.prepare('UPDATE scheduled SET scheduled_date=?, scheduled_time=?, rubric=?, title=?, notes=?, content=?, items=?, status=?, media_path=?, updated_at=CURRENT_TIMESTAMP WHERE id=?')
+    .run(scheduled_date, scheduled_time || '10:00', rubric, title, notes, content, items ? JSON.stringify(items) : null, status || 'planned', media_path || null, id);
   res.json({ ok: true });
 });
 
@@ -872,6 +981,131 @@ app.post('/api/scheduled/:id/items', auth, (req, res) => {
 app.delete('/api/scheduled/:id', auth, (req, res) => {
   db.prepare('DELETE FROM scheduled WHERE id = ?').run(parseInt(req.params.id));
   res.json({ ok: true });
+});
+
+// Generate weekly content plan
+app.post('/api/scheduled/generate-week', auth, async (req, res) => {
+  const { week_start } = req.body; // YYYY-MM-DD of Monday
+  if (!week_start) return res.status(400).json({ error: 'week_start required' });
+
+  // Gather context
+  const startDate = new Date(week_start + 'T00:00:00');
+  const endDate = new Date(startDate); endDate.setDate(endDate.getDate() + 6);
+  const fmt = (d) => d.toISOString().slice(0, 10);
+
+  // 1. Upcoming birthdays this week
+  const allMembers = db.prepare('SELECT * FROM members').all();
+  const weekBdays = allMembers.filter(m => {
+    if (!m.birthday) return false;
+    const bday = m.birthday.slice(5); // MM-DD
+    for (let i = 0; i < 7; i++) {
+      const d = new Date(startDate); d.setDate(d.getDate() + i);
+      const check = (d.getMonth() + 1).toString().padStart(2, '0') + '-' + d.getDate().toString().padStart(2, '0');
+      if (bday === check) return true;
+    }
+    return false;
+  });
+
+  // 2. Recent posts (to avoid repetition)
+  const recentPosts = db.prepare(`
+    SELECT rubric, COUNT(*) as n FROM posts
+    WHERE created_at >= datetime('now', '-14 days')
+    GROUP BY rubric
+  `).all();
+  const recentMap = {};
+  recentPosts.forEach(r => { recentMap[r.rubric] = r.n });
+
+  // 3. Already scheduled this week
+  const existingScheduled = db.prepare(
+    'SELECT * FROM scheduled WHERE scheduled_date >= ? AND scheduled_date <= ?'
+  ).all(fmt(startDate), fmt(endDate));
+
+  // 4. Season opening date
+  const seasonDate = '2026-05-23';
+  const daysToSeason = Math.ceil((new Date(seasonDate) - startDate) / (1000 * 60 * 60 * 24));
+
+  // Build plan slots
+  const slots = [];
+  const days = ['пн', 'вт', 'ср', 'чт', 'пт', 'сб', 'вс'];
+
+  for (let i = 0; i < 7; i++) {
+    const d = new Date(startDate); d.setDate(d.getDate() + i);
+    const dateStr = fmt(d);
+    const dayName = days[i];
+
+    // Check if birthday this day
+    const bdayToday = weekBdays.filter(m => {
+      const bday = m.birthday.slice(5);
+      const check = (d.getMonth() + 1).toString().padStart(2, '0') + '-' + d.getDate().toString().padStart(2, '0');
+      return bday === check;
+    });
+
+    if (bdayToday.length > 0) {
+      bdayToday.forEach(m => {
+        slots.push({ date: dateStr, time: '10:00', rubric: 'birthday', title: `ДР: ${m.name || m.nickname}`, auto_context: `Имя: ${m.name}, прозвище: ${m.nickname}, байк: ${m.bike || '?'}` });
+      });
+    }
+
+    // Daily humor
+    slots.push({ date: dateStr, time: '12:00', rubric: 'humor', title: `Юмор ${dayName}`, auto_context: 'мото юмор, мем, смешное видео' });
+
+    // Monday: moto_news digest
+    if (i === 0) slots.push({ date: dateStr, time: '11:00', rubric: 'moto_news', title: 'Дайджест мотоновостей', auto_context: 'еженедельный дайджест' });
+
+    // Tuesday: kind_reminder
+    if (i === 1) slots.push({ date: dateStr, time: '10:00', rubric: 'kind_reminder', title: 'Напоминание о безопасности', auto_context: '' });
+
+    // Wednesday: route_series or trip_announce
+    if (i === 2) slots.push({ date: dateStr, time: '11:00', rubric: 'route_series', title: 'Маршрут серии', auto_context: '' });
+
+    // Thursday: cross_promo or values
+    if (i === 3) {
+      const weekNum = Math.ceil((d.getTime() - new Date('2026-01-01').getTime()) / (7 * 24 * 60 * 60 * 1000));
+      if (weekNum % 4 === 0) {
+        slots.push({ date: dateStr, time: '10:00', rubric: 'values', title: 'Наши ценности', auto_context: '' });
+      } else {
+        slots.push({ date: dateStr, time: '10:00', rubric: 'cross_promo', title: 'Наши соцсети', auto_context: '' });
+      }
+    }
+
+    // Friday: merch or riddle
+    if (i === 4) {
+      const weekNum = Math.ceil((d.getTime() - new Date('2026-01-01').getTime()) / (7 * 24 * 60 * 60 * 1000));
+      slots.push({ date: dateStr, time: '10:00', rubric: weekNum % 2 === 0 ? 'merch' : 'riddle', title: weekNum % 2 === 0 ? 'Мерч' : 'Шарада', auto_context: '' });
+    }
+
+    // Saturday: trip_digest or trip_announce
+    if (i === 5) {
+      slots.push({ date: dateStr, time: '11:00', rubric: 'trip_announce', title: 'Анонс поездки', auto_context: '' });
+    }
+
+    // Sunday: season_calendar or stories
+    if (i === 6) {
+      slots.push({ date: dateStr, time: '11:00', rubric: 'season_calendar', title: 'Календарь сезона', auto_context: '' });
+    }
+
+    // Season opening countdown (if within 8 weeks)
+    if (daysToSeason > 0 && daysToSeason <= 56 && i === 0) {
+      slots.push({ date: dateStr, time: '09:00', rubric: 'season_opening', title: `Открытие сезона через ${daysToSeason} дней!`, auto_context: `Дата: ${seasonDate}, осталось ${daysToSeason} дней` });
+    }
+  }
+
+  // Filter out slots that already have a scheduled post on the same date+rubric
+  const existingKeys = new Set(existingScheduled.map(s => s.scheduled_date + '|' + s.rubric));
+  const newSlots = slots.filter(s => !existingKeys.has(s.date + '|' + s.rubric));
+
+  // Insert all as drafts
+  const insertStmt = db.prepare(
+    'INSERT INTO scheduled (scheduled_date, scheduled_time, rubric, title, notes, content, status) VALUES (?, ?, ?, ?, ?, ?, ?)'
+  );
+  const inserted = [];
+  for (const slot of newSlots) {
+    const r = insertStmt.run(slot.date, slot.time, slot.rubric, slot.title, slot.auto_context || '', null, 'draft');
+    inserted.push({ id: r.lastInsertRowid, ...slot });
+  }
+
+  console.log(`[PLAN] Generated ${inserted.length} drafts for week ${week_start}`);
+  res.json({ ok: true, count: inserted.length, slots: inserted });
 });
 
 // ═══════ HISTORY ═══════
@@ -946,7 +1180,7 @@ app.get('*', (req, res) => {
 });
 
 app.listen(PORT, '0.0.0.0', () => {
-  console.log(`\n  Hard Locals Content Ops v7.7 (yt-dlp video download + stats dashboard)`);
+  console.log(`\n  Hard Locals Content Ops v8.0 (auto-scheduler + weekly plan generator)`);
   console.log(`  → http://0.0.0.0:${PORT}`);
   console.log(`  → Anthropic: ${ANTHROPIC_API_KEY ? '✓' : '✗'}`);
   console.log(`  → TG Bot: ${TG_BOT_TOKEN ? '✓' : '✗'}`);
