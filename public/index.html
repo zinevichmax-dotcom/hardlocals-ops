@@ -922,11 +922,13 @@ function suggestImgQuery(){
 if(text&&text.length>50){
 setImgLoading(true);
 var prompt="Ты подбираешь фотографию для поста в соцсетях мотоклуба Hard Locals. Текст поста:\n\n"+text.slice(0,800)+"\n\nПредложи ОДИН конкретный поисковый запрос на АНГЛИЙСКОМ (3-5 слов) для поиска стоковой фотографии через Unsplash/Pexels, которая лучше всего подойдёт к этому посту. Учитывай атмосферу, объект, действие. Верни ТОЛЬКО поисковый запрос, без кавычек, без пояснений.";
+var timeout=setTimeout(function(){setImgLoading(false)},15000);
 apiCall("/api/generate",{model:"claude-sonnet-4-20250514",max_tokens:50,system:"Ты помощник по подбору фото.",messages:[{role:"user",content:prompt}]},token).then(function(data){
+clearTimeout(timeout);
 var q="";var cc=data.content||[];for(var i=0;i<cc.length;i++){if(cc[i].type==="text")q+=cc[i].text}
 q=q.trim().replace(/^["']|["']$/g,"").replace(/\n.*/,"");
-if(q){setImgQuery(q);setTimeout(searchImages,100)}else{setImgLoading(false)}
-}).catch(function(){setImgLoading(false)});
+if(q){setImgQuery(q);setImgLoading(false);searchImages()}else{setImgLoading(false)}
+}).catch(function(){clearTimeout(timeout);setImgLoading(false)});
 return;
 }
 // Fallback to rubric-based query
@@ -1130,7 +1132,7 @@ h("button",{onClick:function(){setSaveTemplateOpen(false);setSaveTemplateName(""
 )
 ):null,
 calendarOpen?h("div",{className:"modal-backdrop",onClick:function(e){if(e.target===e.currentTarget){setCalendarOpen(false);setScheduledEdit(null)}}},
-h("div",{className:"modal",style:{maxWidth:1000}},
+h("div",{className:"modal",style:{maxWidth:"95vw",width:"95vw"}},
 h("div",{className:"modal-head"},
 h("div",null,h("div",{className:"modal-title"},"\u{1F4C5} Контент-календарь"),h("div",{className:"modal-sub"},"Планирование публикаций")),
 h("div",{style:{display:"flex",gap:6,alignItems:"center"}},
@@ -1200,13 +1202,17 @@ var ymd=fmtYMD(d);
 var dayPosts=scheduled.filter(function(s){return s.scheduled_date===ymd});
 var isToday=ymd===todayStr;
 var dayName=["Пн","Вт","Ср","Чт","Пт","Сб","Вс"][(d.getDay()+6)%7];
-days.push(h("div",{key:i,style:{background:isToday?"rgba(232,93,31,0.08)":"var(--bg-elev)",border:"1px solid "+(isToday?"var(--accent)":"var(--line-soft)"),borderRadius:8,padding:8,minHeight:100,cursor:"pointer",display:"flex",flexDirection:"column",gap:4},onClick:function(ev){if(ev.target===ev.currentTarget||ev.target.classList.contains("day-header")){setScheduledEdit({scheduled_date:ymd,rubric:"",title:"",notes:""})}}},
+days.push(h("div",{key:i,style:{background:isToday?"rgba(232,93,31,0.08)":"var(--bg-elev)",border:"1px solid "+(isToday?"var(--accent)":"var(--line-soft)"),borderRadius:8,padding:8,minHeight:100,cursor:"pointer",display:"flex",flexDirection:"column",gap:4,transition:"background 0.2s"},
+onDragOver:function(ev){ev.preventDefault();ev.currentTarget.style.background="rgba(232,93,31,0.15)"},
+onDragLeave:function(ev){ev.currentTarget.style.background=isToday?"rgba(232,93,31,0.08)":"var(--bg-elev)"},
+onDrop:function(ev){ev.preventDefault();ev.currentTarget.style.background=isToday?"rgba(232,93,31,0.08)":"var(--bg-elev)";var pid=ev.dataTransfer.getData("text/plain");if(pid){fetch("/api/scheduled/"+pid+"/content",{method:"POST",headers:{"Content-Type":"application/json",Authorization:"Bearer "+token},body:JSON.stringify({scheduled_date:ymd})}).then(function(){loadScheduled()})}},
+onClick:function(ev){if(ev.target===ev.currentTarget||ev.target.classList.contains("day-header")){setScheduledEdit({scheduled_date:ymd,scheduled_time:"10:00",rubric:"",title:"",notes:"",status:"draft"})}}},
 h("div",{className:"day-header",style:{fontSize:10,color:isToday?"var(--accent)":"var(--text-dim)",fontWeight:isToday?700:500,textTransform:"uppercase",letterSpacing:"0.05em",pointerEvents:"none"}},dayName+" \u00B7 "+d.getDate()+"."+((d.getMonth()+1)<10?"0":"")+(d.getMonth()+1)),
 dayPosts.map(function(p){var r=null;for(var j=0;j<RUBRICS.length;j++){if(RUBRICS[j].id===p.rubric)r=RUBRICS[j]}
 var statusColors={draft:"var(--line)",ready:"rgba(74,222,128,0.5)",sent:"rgba(74,222,128,0.8)",sending:"var(--accent)",error:"var(--danger)"};
 var statusIcons={draft:"\u270F",ready:"\u23F3",sent:"\u2705",sending:"\u{1F504}",error:"\u26A0"};
 var st=p.status||"planned";
-return h("div",{key:p.id,style:{background:"var(--bg-card)",borderLeft:"3px solid "+(statusColors[st]||"var(--line-soft)"),borderRadius:5,padding:"4px 6px",fontSize:10,cursor:"pointer",display:"flex",alignItems:"center",gap:4},onClick:function(e){e.stopPropagation();setScheduledEdit(p)}},
+return h("div",{key:p.id,draggable:st!=="sent",onDragStart:function(ev){ev.dataTransfer.setData("text/plain",String(p.id))},style:{background:"var(--bg-card)",borderLeft:"3px solid "+(statusColors[st]||"var(--line-soft)"),borderRadius:5,padding:"4px 6px",fontSize:10,cursor:st!=="sent"?"grab":"pointer",display:"flex",alignItems:"center",gap:4},onClick:function(e){e.stopPropagation();setScheduledEdit(p)}},
 h("span",{title:st},statusIcons[st]||""),
 h("span",null,r?r.icon:""),
 h("span",{style:{flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",color:st==="sent"?"var(--text-dim)":"var(--text)"}},p.scheduled_time?(p.scheduled_time+" "):"",p.title||(r?r.name:p.rubric)),

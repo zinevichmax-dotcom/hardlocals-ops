@@ -983,12 +983,17 @@ app.delete('/api/scheduled/:id', auth, (req, res) => {
   res.json({ ok: true });
 });
 
-// Save generated content back to a scheduled draft
+// Save generated content back to a scheduled draft (also supports date move for drag-drop)
 app.post('/api/scheduled/:id/content', auth, (req, res) => {
   const id = parseInt(req.params.id);
-  const { content, media_path } = req.body;
-  db.prepare('UPDATE scheduled SET content = ?, media_path = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?')
-    .run(content || null, media_path || null, id);
+  const { content, media_path, scheduled_date } = req.body;
+  if (scheduled_date) {
+    db.prepare('UPDATE scheduled SET scheduled_date = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(scheduled_date, id);
+  }
+  if (content !== undefined) {
+    db.prepare('UPDATE scheduled SET content = ?, media_path = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?')
+      .run(content || null, media_path || null, id);
+  }
   res.json({ ok: true });
 });
 
@@ -1033,14 +1038,18 @@ app.post('/api/scheduled/generate-week', auth, async (req, res) => {
   const seasonDate = '2026-05-23';
   const daysToSeason = Math.ceil((new Date(seasonDate) - startDate) / (1000 * 60 * 60 * 24));
 
-  // Build plan slots
+  // Build plan slots (only for today and future)
   const slots = [];
   const days = ['пн', 'вт', 'ср', 'чт', 'пт', 'сб', 'вс'];
+  const todayStr = new Date().toISOString().slice(0, 10);
 
   for (let i = 0; i < 7; i++) {
     const d = new Date(startDate); d.setDate(d.getDate() + i);
     const dateStr = fmt(d);
     const dayName = days[i];
+
+    // Skip past days
+    if (dateStr < todayStr) continue;
 
     // Check if birthday this day
     const bdayToday = weekBdays.filter(m => {
@@ -1102,6 +1111,36 @@ app.post('/api/scheduled/generate-week', auth, async (req, res) => {
   // Filter out slots that already have a scheduled post on the same date+rubric
   const existingKeys = new Set(existingScheduled.map(s => s.scheduled_date + '|' + s.rubric));
   const newSlots = slots.filter(s => !existingKeys.has(s.date + '|' + s.rubric));
+
+  // Distribute times: ensure 2h gap between posts on the same day
+  const slotsByDate = {};
+  for (const s of newSlots) {
+    if (!slotsByDate[s.date]) slotsByDate[s.date] = [];
+    slotsByDate[s.date].push(s);
+  }
+  // Also account for existing posts on these dates
+  for (const ex of existingScheduled) {
+    if (!slotsByDate[ex.scheduled_date]) slotsByDate[ex.scheduled_date] = [];
+    slotsByDate[ex.scheduled_date].push({ time: ex.scheduled_time || '10:00', _existing: true });
+  }
+  const START_HOUR = 9;
+  const GAP_HOURS = 2;
+  for (const date of Object.keys(slotsByDate)) {
+    const daySlots = slotsByDate[date];
+    const existingTimes = daySlots.filter(s => s._existing).map(s => parseInt(s.time));
+    let nextHour = START_HOUR;
+    for (const s of daySlots) {
+      if (s._existing) continue;
+      // Find next available hour that doesn't conflict with existing
+      while (existingTimes.some(h => Math.abs(h - nextHour) < GAP_HOURS)) {
+        nextHour += GAP_HOURS;
+      }
+      if (nextHour > 21) nextHour = 21; // Don't post after 21:00
+      s.time = (nextHour < 10 ? '0' : '') + nextHour + ':00';
+      existingTimes.push(nextHour);
+      nextHour += GAP_HOURS;
+    }
+  }
 
   // Insert all as drafts
   const insertStmt = db.prepare(
@@ -1189,7 +1228,7 @@ app.get('*', (req, res) => {
 });
 
 app.listen(PORT, '0.0.0.0', () => {
-  console.log(`\n  Hard Locals Content Ops v8.0.1 (scheduler + plan + save-to-calendar flow)`);
+  console.log(`\n  Hard Locals Content Ops v8.1 (calendar fixes + drag-drop + future-only plan)`);
   console.log(`  → http://0.0.0.0:${PORT}`);
   console.log(`  → Anthropic: ${ANTHROPIC_API_KEY ? '✓' : '✗'}`);
   console.log(`  → TG Bot: ${TG_BOT_TOKEN ? '✓' : '✗'}`);
