@@ -661,9 +661,37 @@ setBannerOpen(false);
 
 function searchImages(){if(!imgQuery)return;setImgLoading(true);setImgResults([]);apiCall("/api/image-search",{query:imgQuery},token).then(function(d){setImgResults(d.images||[]);setImgLoading(false)}).catch(function(){setImgLoading(false)})}
 
+function pickImgAsAttachment(url){
+// Download image → upload to server → attach as media
+setImgPicked(url);
+fetch(url).then(function(r){return r.blob()}).then(function(blob){
+var fd=new FormData();fd.append("file",blob,"image.jpg");
+return fetch("/api/upload",{method:"POST",headers:{Authorization:"Bearer "+token},body:fd});
+}).then(function(r){return r.json()}).then(function(d){
+if(d.path){
+setAttachedMedia({path:d.path,preview:url,name:"image.jpg",type:"image"});
+setImgSearch(false);
+}else{alert("Ошибка: "+(d.error||"не удалось"))}
+}).catch(function(e){alert("Ошибка: "+e.message)});
+}
+
 function suggestImgQuery(){
+// If we have generated text - ask AI to suggest 3 search queries
+if(text&&text.length>50){
+setImgLoading(true);
+var prompt="Ты подбираешь фотографию для поста в соцсетях мотоклуба Hard Locals. Текст поста:\n\n"+text.slice(0,800)+"\n\nПредложи ОДИН конкретный поисковый запрос на АНГЛИЙСКОМ (3-5 слов) для поиска стоковой фотографии через Unsplash/Pexels, которая лучше всего подойдёт к этому посту. Учитывай атмосферу, объект, действие. Верни ТОЛЬКО поисковый запрос, без кавычек, без пояснений.";
+apiCall("/api/generate",{model:"claude-sonnet-4-20250514",max_tokens:50,system:"Ты помощник по подбору фото.",messages:[{role:"user",content:prompt}]},token).then(function(data){
+var q="";var cc=data.content||[];for(var i=0;i<cc.length;i++){if(cc[i].type==="text")q+=cc[i].text}
+q=q.trim().replace(/^["']|["']$/g,"").replace(/\n.*/,"");
+if(q){setImgQuery(q);setTimeout(searchImages,100)}else{setImgLoading(false)}
+}).catch(function(){setImgLoading(false)});
+return;
+}
+// Fallback to rubric-based query
 var map={trip_announce:"motorcycle road highway",season_calendar:"motorcycles group riders",season_opening:"motorcycle festival",kind_reminder:"motorcycle safety gear",merch:"biker apparel streetwear",trip_digest:"motorcycles group ride",moto_news:"motorcycle news",cross_promo:"social media",riddle:"motorcycle detail",humor:"motorcycle funny",birthday:"motorcycle birthday",values:"motorcycle brotherhood sunset",route_series:"motorcycle mountain road",stories:"motorcycle lifestyle",custom:"motorcycle lifestyle"};
-setImgQuery(map[rub?rub.id:"custom"]||"motorcycle");
+var q=map[rub?rub.id:"custom"]||"motorcycle";
+setImgQuery(q);
+setTimeout(searchImages,100);
 }
 
 function pickImgForBanner(url){setBannerPhoto(url);setImgPicked(url);setBannerOpen(true);setImgSearch(false)}
@@ -1017,14 +1045,24 @@ banner?h("img",{src:banner,className:"banner-preview"}):null
 ):null,
 // IMAGE SEARCH PANEL
 imgSearch?h("div",{className:"panel"},
-h("div",{className:"panel-head"},"\u{1F50D} Поиск фото"),
+h("div",{className:"panel-head"},"\u{1F50D} Поиск фото"+(text&&text.length>50?" · AI учтёт контекст поста":"")),
 h("div",{className:"panel-body"},
 h("div",{style:{display:"flex",gap:6,marginBottom:12,flexWrap:"wrap"}},
 h("input",{value:imgQuery,onChange:function(e){setImgQuery(e.target.value)},onKeyDown:function(e){if(e.key==="Enter")searchImages()},placeholder:"motorcycle highway",className:"input",style:{flex:"1 1 200px"}}),
 h("button",{onClick:searchImages,disabled:imgLoading||!imgQuery,className:"btn-primary"},imgLoading?"...":"Искать"),
-h("button",{onClick:suggestImgQuery,className:"btn-ghost"},"\u21BB Подсказать")
+h("button",{onClick:suggestImgQuery,disabled:imgLoading,className:"btn-ghost",style:text&&text.length>50?{color:"var(--accent)",borderColor:"rgba(232,93,31,0.3)"}:{}},text&&text.length>50?"\u2728 Подобрать по посту":"\u21BB Подсказать")
 ),
-imgResults.length>0?h("div",{className:"image-grid"},imgResults.map(function(img,idx){return h("div",{key:idx,onClick:function(){pickImgForBanner(img.url)},className:"image-item"+(imgPicked===img.url?" picked":"")},h("img",{src:img.thumb||img.url}),h("div",{className:"image-author"},img.author))})):imgLoading?h("div",{style:{textAlign:"center",padding:20,color:"var(--text-dim)",fontSize:11}},"Ищу..."):null
+imgResults.length>0?h("div",null,
+h("div",{style:{fontSize:10,color:"var(--text-dim)",marginBottom:8,textTransform:"uppercase",letterSpacing:"0.1em"}},"Выбери фото:"),
+h("div",{className:"image-grid"},imgResults.map(function(img,idx){var picked=imgPicked===img.url;return h("div",{key:idx,className:"image-item"+(picked?" picked":"")+(imgPicked&&!picked?" dimmed":""),style:{cursor:"default"}},
+h("img",{src:img.thumb||img.url,onClick:function(){setImgPicked(img.url)},style:{cursor:"pointer"}}),
+h("div",{style:{position:"absolute",top:6,right:6,display:"flex",gap:4,flexDirection:"column"}},
+h("button",{onClick:function(e){e.stopPropagation();pickImgAsAttachment(img.url)},style:{padding:"4px 8px",fontSize:9,background:"rgba(232,93,31,0.9)",color:"#fff",border:"none",borderRadius:5,cursor:"pointer",fontWeight:600,backdropFilter:"blur(10px)"}},"\u{1F4CE} К посту"),
+h("button",{onClick:function(e){e.stopPropagation();pickImgForBanner(img.url)},style:{padding:"4px 8px",fontSize:9,background:"rgba(0,0,0,0.7)",color:"#fff",border:"1px solid rgba(255,255,255,0.2)",borderRadius:5,cursor:"pointer",fontWeight:500,backdropFilter:"blur(10px)"}},"\u{1F5BC}\uFE0F В баннер")
+),
+h("div",{className:"image-author"},img.author)
+)}))
+):imgLoading?h("div",{style:{textAlign:"center",padding:20,color:"var(--text-dim)",fontSize:11}},text&&text.length>50?"AI подбирает запрос...":"Ищу..."):null
 )
 ):null
 ),
