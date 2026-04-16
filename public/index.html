@@ -778,14 +778,18 @@ setBannerPhoto("");
 function searchImages(){if(!imgQuery)return;setImgLoading(true);setImgResults([]);apiCall("/api/image-search",{query:imgQuery},token).then(function(d){setImgResults(d.images||[]);setImgLoading(false)}).catch(function(){setImgLoading(false)})}
 
 function addAttachedMedia(item){
-var current=attachedMediaList||[];
-if(current.length>=10){alert("Максимум 10 медиа в одном посте");return false}
-setAttachedMediaList(current.concat([item]));
-return true;
+var overflow=false;
+setAttachedMediaList(function(prev){
+var arr=prev||[];
+if(arr.length>=10){overflow=true;return arr}
+return arr.concat([item]);
+});
+if(overflow)alert("Максимум 10 медиа в одном посте");
+return !overflow;
 }
 
 function removeAttachedMedia(idx){
-setAttachedMediaList((attachedMediaList||[]).filter(function(_,i){return i!==idx}));
+setAttachedMediaList(function(prev){return(prev||[]).filter(function(_,i){return i!==idx})});
 }
 
 function handleAttachFilesUpload(files){
