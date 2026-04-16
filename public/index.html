@@ -398,11 +398,25 @@ if(d.path)cb(d.path);
 });
 }
 
+function bdayMD(birthday){
+if(!birthday)return null;
+// birthday format: YYYY-MM-DD
+var parts=birthday.split("-");
+if(parts.length<3)return null;
+return parts[1]+"-"+parts[2];
+}
+
+function todayMD(){
+var t=new Date();
+var m=(t.getMonth()+1).toString();if(m.length<2)m="0"+m;
+var d=t.getDate().toString();if(d.length<2)d="0"+d;
+return m+"-"+d;
+}
+
 function isBdayToday(birthday){
-if(!birthday)return false;
-var today=new Date();
-var md=(today.getMonth()+1).toString().padStart(2,"0")+"-"+today.getDate().toString().padStart(2,"0");
-return birthday.slice(5)===md;
+var md=bdayMD(birthday);
+if(!md)return false;
+return md===todayMD();
 }
 
 function daysUntilBday(birthday){
@@ -751,7 +765,7 @@ h("div",{className:"brand"},h("span",{className:"brand-name"},"HARD LOCALS"),h("
 ),
 h("div",{className:"header-right"},
 h("div",{className:"status-pill"},h("span",{className:"status-dot"}),h("span",{className:"status-text"},"API Online")),
-h("button",{onClick:openMembers,className:"header-btn"},"\u{1F465} Клуб"+(upcomingBday.length>0?" \u{1F382}":"")),
+h("button",{onClick:openMembers,className:"header-btn",style:upcomingBday.some(function(m){return isBdayToday(m.birthday)})?{color:"#fff",background:"var(--accent)",borderColor:"var(--accent)",fontWeight:600}:{}},"\u{1F465} Клуб"+(upcomingBday.length>0?" \u{1F382}":"")),
 h("button",{onClick:openHistory,className:"header-btn"},"История"),
 h("button",{onClick:logout,className:"header-btn"},"Выйти")
 )
@@ -765,7 +779,54 @@ return h("div",{key:id,className:"rubric-item"+(active?" active":""),onClick:fun
 h("span",{className:"rubric-icon-s"},r.icon),h("span",{className:"rubric-name-s"},r.name),h("span",{className:"rubric-freq-s"},r.freq));})
 );})
 ):null,
-!rub?h("div",{className:"empty"},h("div",{className:"empty-inner"},h("div",{className:"empty-icon"},"\u{1F6E3}"),h("div",{className:"empty-title"},"Выбери рубрику"),h("div",{className:"empty-sub"},"Слева — список рубрик"))):
+!rub?h("div",{className:"work",style:{padding:"32px 40px"}},
+h("div",{className:"work-inner"},
+h("div",{style:{marginBottom:32}},
+h("div",{style:{fontFamily:"'Unbounded',sans-serif",fontSize:24,fontWeight:700,marginBottom:6}},"Главная"),
+h("div",{style:{fontSize:13,color:"var(--text-muted)"}},"Обзор клуба и контента")
+),
+// BIRTHDAYS CARD
+h("div",{style:{background:"linear-gradient(180deg,var(--bg-card) 0%,var(--bg-elev) 100%)",border:"1px solid var(--line)",borderRadius:14,padding:24,marginBottom:16}},
+h("div",{style:{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16}},
+h("div",{style:{display:"flex",alignItems:"center",gap:12}},
+h("div",{style:{fontSize:20}},"\u{1F382}"),
+h("div",null,
+h("div",{style:{fontFamily:"'Unbounded',sans-serif",fontSize:14,fontWeight:700}},"Дни рождения"),
+h("div",{style:{fontSize:11,color:"var(--text-dim)"}},upcomingBday.length?"Ближайшие 7 дней":"Нет в ближайшие 7 дней")
+)
+),
+h("button",{onClick:openMembers,className:"btn-ghost"},"Открыть клуб \u2192")
+),
+upcomingBday.length===0?h("div",{style:{padding:20,textAlign:"center",color:"var(--text-dim)",fontSize:12}},"Никого в ближайшую неделю. Добавь участников в клубе."):
+h("div",{style:{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(280px,1fr))",gap:10}},upcomingBday.map(function(m){
+var today=isBdayToday(m.birthday);
+var days=daysUntilBday(m.birthday);
+return h("div",{key:m.id,style:{padding:14,background:today?"rgba(232,93,31,0.08)":"var(--bg-elev)",border:"1px solid "+(today?"var(--accent)":"var(--line-soft)"),borderRadius:10,display:"flex",gap:10,alignItems:"center"}},
+m.photo_path?h("img",{src:m.photo_path,style:{width:44,height:44,borderRadius:"50%",objectFit:"cover",flexShrink:0}}):h("div",{style:{width:44,height:44,borderRadius:"50%",background:"var(--bg-card)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:16,flexShrink:0}},"\u{1F464}"),
+h("div",{style:{flex:1,minWidth:0}},
+h("div",{style:{fontSize:13,fontWeight:600,marginBottom:2}},m.name,m.nickname?h("span",{style:{color:"var(--text-muted)",fontWeight:400}}," ("+m.nickname+")"):null),
+h("div",{style:{fontSize:10,color:today?"var(--accent)":"var(--text-muted)",fontWeight:today?700:400}},today?"\u{1F382} СЕГОДНЯ!":"\u{1F382} через "+days+" дн.")
+),
+h("button",{onClick:function(){pickRubric("birthday");setTimeout(function(){useMemberForBirthday(m)},50)},className:"btn-ghost",style:{padding:"5px 10px",fontSize:10,color:"var(--accent)",flexShrink:0}},"\u21A9 В пост")
+);
+}))
+),
+// QUICK ACTIONS
+h("div",{style:{background:"var(--bg-card)",border:"1px solid var(--line-soft)",borderRadius:14,padding:24}},
+h("div",{style:{fontFamily:"'Unbounded',sans-serif",fontSize:14,fontWeight:700,marginBottom:16}},"Быстрый старт"),
+h("div",{style:{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(180px,1fr))",gap:10}},
+["moto_news","trip_announce","merch","kind_reminder","custom"].map(function(id){
+var r=null;for(var i=0;i<RUBRICS.length;i++){if(RUBRICS[i].id===id)r=RUBRICS[i]}if(!r)return null;
+return h("button",{key:id,onClick:function(){pickRubric(id)},style:{padding:14,background:"var(--bg-elev)",border:"1px solid var(--line-soft)",borderRadius:10,textAlign:"left",transition:"all 0.2s",cursor:"pointer",color:"var(--text)"}},
+h("div",{style:{fontSize:18,marginBottom:6}},r.icon),
+h("div",{style:{fontSize:12,fontWeight:600,marginBottom:2}},r.name),
+h("div",{style:{fontSize:10,color:"var(--text-dim)"}},r.freq)
+);
+})
+)
+)
+)
+):
 h("div",{className:"content"},
 h("div",{className:"rubric-header"},
 h("div",{className:"rubric-title"},h("div",{className:"rubric-title-icon"},rub.icon),h("div",null,h("div",{className:"rubric-title-text"},rub.name),h("div",{className:"rubric-title-sub"},rub.desc))),

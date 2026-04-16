@@ -323,21 +323,21 @@ app.get('/api/members', auth, (req, res) => {
 });
 
 app.get('/api/members/upcoming-birthdays', auth, (req, res) => {
-  // Members whose birthday is within the next 7 days (comparing month-day)
   const rows = db.prepare('SELECT * FROM members WHERE birthday IS NOT NULL').all();
   const today = new Date();
-  const todayMD = (today.getMonth() + 1).toString().padStart(2, '0') + '-' + today.getDate().toString().padStart(2, '0');
+  const pad = (n) => (n < 10 ? '0' + n : '' + n);
+  const todayMD = pad(today.getMonth() + 1) + '-' + pad(today.getDate());
   const in7 = new Date(today.getTime() + 7 * 86400000);
-  const in7MD = (in7.getMonth() + 1).toString().padStart(2, '0') + '-' + in7.getDate().toString().padStart(2, '0');
+  const in7MD = pad(in7.getMonth() + 1) + '-' + pad(in7.getDate());
 
   const upcoming = rows.filter(m => {
     if (!m.birthday) return false;
-    // birthday stored as YYYY-MM-DD, extract MM-DD
-    const md = m.birthday.slice(5);
+    const parts = m.birthday.split('-');
+    if (parts.length < 3) return false;
+    const md = parts[1] + '-' + parts[2];
     if (todayMD <= in7MD) {
       return md >= todayMD && md <= in7MD;
     } else {
-      // year boundary
       return md >= todayMD || md <= in7MD;
     }
   });
@@ -377,7 +377,7 @@ app.get('*', (req, res) => {
 });
 
 app.listen(PORT, '0.0.0.0', () => {
-  console.log(`\n  Hard Locals Content Ops v6.4 (banner fits + preview media + fixed DnD)`);
+  console.log(`\n  Hard Locals Content Ops v6.5 (dashboard + fixed bday detection)`);
   console.log(`  → http://0.0.0.0:${PORT}`);
   console.log(`  → Anthropic: ${ANTHROPIC_API_KEY ? '✓' : '✗'}`);
   console.log(`  → TG Bot: ${TG_BOT_TOKEN ? '✓' : '✗'}`);
