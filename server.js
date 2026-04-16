@@ -227,63 +227,117 @@ app.post('/api/post/telegram', auth, async (req, res) => {
   if (!TG_BOT_TOKEN) return res.status(500).json({ error: 'TG_BOT_TOKEN not configured' });
   if (!TG_CHANNEL_ID) return res.status(500).json({ error: 'TG_CHANNEL_ID not configured' });
 
-  const { text, media_path, rubric } = req.body;
+  const { text, media_path, media_paths, rubric } = req.body;
   const apiBase = `${TG_LOCAL_API}/bot${TG_BOT_TOKEN}`;
 
-  console.log('[TG] Post request:', { text_length: text?.length, has_media: !!media_path, media_path });
+  // Normalize media: accept either single path or array
+  let paths = [];
+  if (Array.isArray(media_paths) && media_paths.length > 0) paths = media_paths;
+  else if (media_path) paths = [media_path];
 
+  // Validate files exist
+  paths = paths.filter(p => existsSync(join(__dirname, p.replace(/^\//, ''))));
+
+  console.log('[TG] Post request:', { text_length: text?.length, media_count: paths.length });
+
+  const TG_CAPTION_LIMIT = 1024;
   try {
-    let result;
-    if (media_path && existsSync(join(__dirname, media_path.replace(/^\//, '')))) {
-      const filePath = join(__dirname, media_path.replace(/^\//, ''));
-      const TG_CAPTION_LIMIT = 1024;
-      if (text && text.length > TG_CAPTION_LIMIT) {
-        console.log('[TG] Rejected: caption', text.length, '> limit', TG_CAPTION_LIMIT);
-        return res.status(400).json({ error: `Пост слишком длинный для отправки с картинкой: ${text.length}/${TG_CAPTION_LIMIT} символов. Сократи текст или открепи медиа.` });
-      }
-      console.log('[TG] Sending with media:', filePath);
-      const isVideo = media_path.match(/\.(mp4|mov|avi|webm)$/i);
-      const fileBuffer = readFileSync(filePath);
-      const formData = new FormData();
-      formData.append('chat_id', TG_CHANNEL_ID);
-      formData.append('caption', text);
-      formData.append('parse_mode', 'HTML');
-      const blob = new Blob([fileBuffer]);
-      if (isVideo) {
-        formData.append('video', blob, 'video.mp4');
-        result = await fetch(`${apiBase}/sendVideo`, { method: 'POST', body: formData });
-      } else {
-        formData.append('photo', blob, 'photo.jpg');
-        result = await fetch(`${apiBase}/sendPhoto`, { method: 'POST', body: formData });
-      }
-    } else {
-      if (media_path) console.log('[TG] media_path provided but file not found:', media_path);
+    if (paths.length === 0) {
+      // Text only
       console.log('[TG] Sending as text only');
-      result = await fetch(`${apiBase}/sendMessage`, {
+      const result = await fetch(`${apiBase}/sendMessage`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           chat_id: TG_CHANNEL_ID,
-          text: text,
+          text,
           parse_mode: 'HTML',
           disable_web_page_preview: false,
         }),
       });
+      const data = await result.json();
+      console.log('[TG] Response:', data.ok ? 'OK' : data.description);
+      if (data.ok) {
+        db.prepare('INSERT INTO posts (rubric, content, platform, status, media_path) VALUES (?, ?, ?, ?, ?)').run(
+          rubric || 'unknown', text, 'telegram', 'sent', null
+        );
+        return res.json({ ok: true, message_id: data.result?.message_id });
+      }
+      return res.status(400).json({ error: data.description || 'TG API error' });
     }
 
+    if (text && text.length > TG_CAPTION_LIMIT) {
+      console.log('[TG] Rejected: caption', text.length, '> limit', TG_CAPTION_LIMIT);
+      return res.status(400).json({ error: `Пост слишком длинный для отправки с медиа: ${text.length}/${TG_CAPTION_LIMIT} символов. Сократи текст или открепи медиа.` });
+    }
+
+    if (paths.length === 1) {
+      // Single photo/video
+      const p = paths[0];
+      const filePath = join(__dirname, p.replace(/^\//, ''));
+      const isVideo = p.match(/\.(mp4|mov|avi|webm)$/i);
+      console.log('[TG] Sending single', isVideo ? 'video' : 'photo', filePath);
+      const fd = new FormData();
+      fd.append('chat_id', TG_CHANNEL_ID);
+      fd.append('caption', text || '');
+      fd.append('parse_mode', 'HTML');
+      const blob = new Blob([readFileSync(filePath)]);
+      if (isVideo) {
+        fd.append('video', blob, 'video.mp4');
+      } else {
+        fd.append('photo', blob, 'photo.jpg');
+      }
+      const result = await fetch(`${apiBase}/${isVideo ? 'sendVideo' : 'sendPhoto'}`, { method: 'POST', body: fd });
+      const data = await result.json();
+      console.log('[TG] Response:', data.ok ? 'OK' : data.description);
+      if (data.ok) {
+        db.prepare('INSERT INTO posts (rubric, content, platform, status, media_path) VALUES (?, ?, ?, ?, ?)').run(
+          rubric || 'unknown', text, 'telegram', 'sent', p
+        );
+        return res.json({ ok: true, message_id: data.result?.message_id });
+      }
+      return res.status(400).json({ error: data.description || 'TG API error' });
+    }
+
+    // Multiple media → sendMediaGroup (max 10 per group)
+    if (paths.length > 10) {
+      return res.status(400).json({ error: 'Максимум 10 медиа в карусели' });
+    }
+    console.log('[TG] Sending media group, count:', paths.length);
+    const fd = new FormData();
+    fd.append('chat_id', TG_CHANNEL_ID);
+    const mediaArr = [];
+    paths.forEach((p, i) => {
+      const isVideo = p.match(/\.(mp4|mov|avi|webm)$/i);
+      const attachName = `file${i}`;
+      const fileName = isVideo ? `video${i}.mp4` : `photo${i}.jpg`;
+      const blob = new Blob([readFileSync(join(__dirname, p.replace(/^\//, '')))]);
+      fd.append(attachName, blob, fileName);
+      const mediaItem = {
+        type: isVideo ? 'video' : 'photo',
+        media: `attach://${attachName}`,
+      };
+      // Caption only on first item
+      if (i === 0 && text) {
+        mediaItem.caption = text;
+        mediaItem.parse_mode = 'HTML';
+      }
+      mediaArr.push(mediaItem);
+    });
+    fd.append('media', JSON.stringify(mediaArr));
+    const result = await fetch(`${apiBase}/sendMediaGroup`, { method: 'POST', body: fd });
     const data = await result.json();
-    console.log('[TG] Response:', data.ok ? 'OK' : data.description);
+    console.log('[TG] Group response:', data.ok ? 'OK' : data.description);
     if (data.ok) {
       db.prepare('INSERT INTO posts (rubric, content, platform, status, media_path) VALUES (?, ?, ?, ?, ?)').run(
-        rubric || 'unknown', text, 'telegram', 'sent', media_path || null
+        rubric || 'unknown', text, 'telegram', 'sent', paths.join(',')
       );
-      res.json({ ok: true, message_id: data.result?.message_id });
-    } else {
-      res.status(400).json({ error: data.description || 'TG API error' });
+      return res.json({ ok: true, message_ids: (data.result || []).map(m => m.message_id) });
     }
+    return res.status(400).json({ error: data.description || 'TG API error' });
   } catch (e) {
     console.error('[TG] Error:', e);
-    res.status(500).json({ error: e.message });
+    return res.status(500).json({ error: e.message });
   }
 });
 
@@ -680,7 +734,7 @@ app.get('*', (req, res) => {
 });
 
 app.listen(PORT, '0.0.0.0', () => {
-  console.log(`\n  Hard Locals Content Ops v7.3 (block editor for all rubrics)`);
+  console.log(`\n  Hard Locals Content Ops v7.4 (media carousel + bulk upload)`);
   console.log(`  → http://0.0.0.0:${PORT}`);
   console.log(`  → Anthropic: ${ANTHROPIC_API_KEY ? '✓' : '✗'}`);
   console.log(`  → TG Bot: ${TG_BOT_TOKEN ? '✓' : '✗'}`);

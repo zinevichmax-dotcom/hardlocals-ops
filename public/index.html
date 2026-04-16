@@ -96,11 +96,21 @@ a{color:inherit;text-decoration:none}
 .error-box{margin-top:14px;padding:12px 16px;background:rgba(239,68,68,0.08);border:1px solid rgba(239,68,68,0.2);border-radius:8px;color:#FCA5A5;font-size:12px}
 .warning-box{margin-top:14px;padding:12px 16px;background:rgba(245,158,11,0.08);border:1px solid rgba(245,158,11,0.2);border-radius:8px;color:#FCD34D;font-size:12px}
 
-.media-attached-bar{margin-top:14px;padding:12px 16px;background:linear-gradient(90deg,rgba(232,93,31,0.12) 0%,rgba(232,93,31,0.04) 100%);border:2px solid var(--accent);border-radius:10px;display:flex;align-items:center;gap:12px;animation:attachedBarPulse 2s 2}
+.media-attached-bar{margin-top:14px;padding:14px 16px;background:linear-gradient(90deg,rgba(232,93,31,0.12) 0%,rgba(232,93,31,0.04) 100%);border:2px solid var(--accent);border-radius:10px;animation:attachedBarPulse 2s 2}
 @keyframes attachedBarPulse{
   0%,100%{box-shadow:0 0 0 0 rgba(232,93,31,0)}
   50%{box-shadow:0 0 0 6px rgba(232,93,31,0.25)}
 }
+.media-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.media-head{font-size:12px;font-weight:600;color:var(--accent);margin-bottom:10px;display:flex;align-items:center;gap:8px}
+.media-thumb-wrap{position:relative;width:68px;height:68px;border-radius:8px;overflow:hidden;border:1px solid rgba(232,93,31,0.3);flex-shrink:0;background:var(--bg);transition:transform 0.15s}
+.media-thumb-wrap:hover{transform:translateY(-2px)}
+.media-thumb-wrap img,.media-thumb-wrap video{width:100%;height:100%;object-fit:cover;display:block}
+.media-thumb-idx{position:absolute;top:3px;left:3px;width:18px;height:18px;border-radius:4px;background:rgba(0,0,0,0.7);color:#fff;font-size:10px;font-weight:700;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(6px)}
+.media-thumb-remove{position:absolute;top:3px;right:3px;width:18px;height:18px;border-radius:50%;background:rgba(239,68,68,0.9);color:#fff;font-size:11px;border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0;line-height:1}
+.media-thumb-remove:hover{background:var(--danger)}
+.media-add-btn{width:68px;height:68px;border-radius:8px;border:2px dashed var(--line);background:var(--bg-card);color:var(--text-muted);font-size:20px;cursor:pointer;flex-shrink:0;transition:all 0.2s;display:flex;align-items:center;justify-content:center}
+.media-add-btn:hover{border-color:var(--accent);color:var(--accent);background:rgba(232,93,31,0.05)}
 .media-attached-thumb{width:44px;height:44px;border-radius:6px;object-fit:cover;flex-shrink:0}
 .media-attached-info{flex:1}
 .media-attached-title{font-size:12px;font-weight:600;color:var(--accent);margin-bottom:2px}
@@ -274,6 +284,34 @@ s=s.replace(/\u0001a\u0002/g,"</a>");
 return s;
 }
 
+function handleAttachFilesUpload(files){
+if(!files||files.length===0)return;
+Array.from(files).forEach(function(file){
+if(!file.type.startsWith("image/")&&!file.type.startsWith("video/"))return;
+var fd=new FormData();fd.append("file",file);
+fetch("/api/upload",{method:"POST",headers:{Authorization:"Bearer "+token},body:fd}).then(function(r){return r.json()}).then(function(d){
+if(!d.path)return;
+var reader=new FileReader();
+reader.onload=function(e){
+addAttachedMedia({path:d.path,preview:e.target.result,name:file.name,type:file.type.startsWith("video/")?"video":"image"});
+};
+reader.readAsDataURL(file);
+});
+});
+}
+
+function addAttachedMedia(item){
+// Add single media item to attachment list
+var current=attachedMediaList||[];
+if(current.length>=10){alert("Максимум 10 медиа в одном посте");return false}
+setAttachedMediaList(current.concat([item]));
+return true;
+}
+
+function removeAttachedMedia(idx){
+setAttachedMediaList((attachedMediaList||[]).filter(function(_,i){return i!==idx}));
+}
+
 function App(){
 var useS=React.useState,useE=React.useEffect,useR=React.useRef;
 var tokenS=useS(localStorage.getItem("token")||"");
@@ -292,7 +330,7 @@ var loginUS=useS("");
 var loginPS=useS("");
 var loginES=useS("");
 var loginBS=useS(false);
-var attachedMediaS=useS(null);
+var attachedMediaS=useS([]);
 var bannerS=useS(null);
 var bannerOpenS=useS(false);
 var bannerPhotoS=useS("");
@@ -345,7 +383,7 @@ var loginU=loginUS[0],setLoginU=loginUS[1];
 var loginP=loginPS[0],setLoginP=loginPS[1];
 var loginE=loginES[0],setLoginE=loginES[1];
 var loginB=loginBS[0],setLoginB=loginBS[1];
-var attachedMedia=attachedMediaS[0],setAttachedMedia=attachedMediaS[1];
+var attachedMediaList=attachedMediaS[0],setAttachedMediaList=attachedMediaS[1];
 var banner=bannerS[0],setBanner=bannerS[1];
 var bannerOpen=bannerOpenS[0],setBannerOpen=bannerOpenS[1];
 var bannerPhoto=bannerPhotoS[0],setBannerPhoto=bannerPhotoS[1];
@@ -574,7 +612,7 @@ if(r.token){localStorage.setItem("token",r.token);setToken(r.token);setAuthed(tr
 setLoginB(false);
 }).catch(function(e){setLoginE(String(e.message||e));setLoginB(false)})}
 
-function pickRubric(id){setSel(id);setFields({});setText("");setError("");setPostMsg("");setBlocks(null);setBanner(null);setBannerOpen(false);setImgSearch(false);setAttachedMedia(null);loadTemplates(id)}
+function pickRubric(id){setSel(id);setFields({});setText("");setError("");setPostMsg("");setBlocks(null);setBanner(null);setBannerOpen(false);setImgSearch(false);setAttachedMediaList([]);loadTemplates(id)}
 
 function loadTemplates(rubric){
 fetch("/api/templates?rubric="+encodeURIComponent(rubric),{headers:{Authorization:"Bearer "+token}}).then(function(r){return r.json()}).then(function(d){setTemplates(Array.isArray(d)?d:[])}).catch(function(){setTemplates([])});
@@ -694,8 +732,10 @@ setPosting(pid);setPostMsg("");
 var t=adapt(text,pid);
 var ep=pid==="tg"?"/api/post/telegram":"/api/post/vk";
 var payload={text:t,rubric:rub?rub.id:""};
-if(attachedMedia&&attachedMedia.path)payload.media_path=attachedMedia.path;
-console.log("[POST]",ep,"media:",payload.media_path||"none");
+if(attachedMediaList&&attachedMediaList.length>0){
+payload.media_paths=attachedMediaList.map(function(m){return m.path});
+}
+console.log("[POST]",ep,"media:",payload.media_paths?payload.media_paths.length+" files":"none");
 apiCall(ep,payload,token).then(function(r){
 if(r.ok){setPostMsg("ok")}else{setPostMsg(String(r.error||"Ошибка"))}
 setPosting("");
@@ -754,8 +794,11 @@ return fetch("/api/upload",{method:"POST",headers:{Authorization:"Bearer "+token
 }).then(function(r){return r.json()}).then(function(d){
 if(d.path){
 console.log("[ATTACH] banner attached:",d.path);
-setAttachedMedia({path:d.path,preview:banner,name:"banner.jpg",type:"image"});
+if(addAttachedMedia({path:d.path,preview:banner,name:"banner.jpg",type:"image"})){
 setBannerOpen(false);
+setBanner(null);
+setBannerPhoto("");
+}
 }else{alert("Ошибка: "+(d.error||"не удалось"))}
 }).catch(function(e){alert("Ошибка: "+e.message)});
 }
@@ -763,20 +806,19 @@ setBannerOpen(false);
 function searchImages(){if(!imgQuery)return;setImgLoading(true);setImgResults([]);apiCall("/api/image-search",{query:imgQuery},token).then(function(d){setImgResults(d.images||[]);setImgLoading(false)}).catch(function(){setImgLoading(false)})}
 
 function pickImgAsAttachment(url){
-// Download image → upload to server → attach as media
 setImgPicked(url);
 fetch(url).then(function(r){return r.blob()}).then(function(blob){
 var fd=new FormData();fd.append("file",blob,"image.jpg");
 return fetch("/api/upload",{method:"POST",headers:{Authorization:"Bearer "+token},body:fd});
 }).then(function(r){return r.json()}).then(function(d){
 if(d.path){
-setAttachedMedia({path:d.path,preview:url,name:"image.jpg",type:"image"});
+if(addAttachedMedia({path:d.path,preview:url,name:"image.jpg",type:"image"})){
 setImgSearch(false);
-// Scroll to attached media indicator
 setTimeout(function(){
 var el=document.querySelector(".media-attached-bar");
 if(el)el.scrollIntoView({behavior:"smooth",block:"center"});
 },100);
+}
 }else{alert("Ошибка: "+(d.error||"не удалось"))}
 }).catch(function(e){alert("Ошибка: "+e.message)});
 }
@@ -1060,7 +1102,7 @@ h("div",{className:"header"},
 h("div",{className:"header-left"},
 h("button",{onClick:function(){setSidebar(!sidebar)},className:"menu-btn"},"\u2630"),
 h("div",{className:"brand"},h("span",{className:"brand-name"},"HARD LOCALS"),h("span",{className:"brand-sub"},"Content Operations")),
-sel?h("button",{onClick:function(){setSel(null);setText("");setFields({});setBlocks(null);setBanner(null);setBannerOpen(false);setImgSearch(false);setAttachedMedia(null)},className:"header-btn",style:{marginLeft:16}},"\u2190 Главная"):null
+sel?h("button",{onClick:function(){setSel(null);setText("");setFields({});setBlocks(null);setBanner(null);setBannerOpen(false);setImgSearch(false);setAttachedMediaList([])},className:"header-btn",style:{marginLeft:16}},"\u2190 Главная"):null
 ),
 h("div",{className:"header-right"},
 h("div",{className:"status-pill"},h("span",{className:"status-dot"}),h("span",{className:"status-text"},"API Online")),
@@ -1173,16 +1215,27 @@ h("div",{style:{marginBottom:24}},
 h("div",{style:{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}},
 h("button",{onClick:function(){setBannerOpen(!bannerOpen);setImgSearch(false)},className:"tool-btn"},"\u{1F5BC}\uFE0F ",bannerOpen?"Скрыть":"Баннер"),
 h("button",{onClick:function(){setImgSearch(!imgSearch);setBannerOpen(false);if(!imgSearch&&!imgQuery)suggestImgQuery()},className:"tool-btn"},"\u{1F50D} ",imgSearch?"Скрыть":"Найти фото"),
+h("label",{htmlFor:"tools-upload-input",className:"tool-btn",style:{cursor:"pointer"}},"\u{1F4CE} Загрузить",
+h("input",{id:"tools-upload-input",type:"file",multiple:true,accept:"image/*,video/*",style:{display:"none"},onChange:function(e){handleAttachFilesUpload(e.target.files);e.target.value=""}})
+),
 banner?h("span",{className:"tool-badge"},"\u2713 Баннер сгенерирован"):null
 ),
 // ATTACHED MEDIA INDICATOR
-attachedMedia?h("div",{className:"media-attached-bar"},
-h("img",{className:"media-attached-thumb",src:attachedMedia.preview||attachedMedia.path}),
-h("div",{className:"media-attached-info"},
-h("div",{className:"media-attached-title"},"\u{1F4CE} Медиа прикреплено к посту"),
-h("div",{className:"media-attached-meta"},attachedMedia.name||attachedMedia.path)
+attachedMediaList&&attachedMediaList.length>0?h("div",{className:"media-attached-bar"},
+h("div",{className:"media-head"},
+h("span",null,"\u{1F4CE} Медиа прикреплено ("+attachedMediaList.length+(attachedMediaList.length>1?" — карусель":"")+")"),
+attachedMediaList.length>1?h("span",{style:{fontSize:10,color:"var(--text-muted)",fontWeight:400}},"Первое будет с подписью"):null
 ),
-h("button",{onClick:function(){setAttachedMedia(null)},className:"media-attached-remove"},"\u2715 Открепить")
+h("div",{className:"media-row"},
+attachedMediaList.map(function(m,idx){return h("div",{key:idx,className:"media-thumb-wrap"},
+h("img",{src:m.preview||m.path,alt:""}),
+h("span",{className:"media-thumb-idx"},idx+1),
+h("button",{className:"media-thumb-remove",onClick:function(){removeAttachedMedia(idx)},title:"Убрать"},"\u2715")
+)}),
+attachedMediaList.length<10?h("label",{className:"media-add-btn",title:"Загрузить ещё фото/видео",htmlFor:"attach-more-input"},"+",
+h("input",{id:"attach-more-input",type:"file",multiple:true,accept:"image/*,video/*",style:{display:"none"},onChange:function(e){handleAttachFilesUpload(e.target.files);e.target.value=""}})
+):null
+)
 ):null,
 // BANNER PANEL
 bannerOpen?h("div",{className:"panel"},
@@ -1201,8 +1254,7 @@ uploaded.length>0?h("div",{className:"field"},h("div",{className:"field-label"},
 h("div",{className:"field"},h("div",{className:"field-label"},"Фото с сайта"),h("div",{className:"image-grid"},SITE_PHOTOS.map(function(p){return h("div",{key:p,onClick:function(){setBannerPhoto(p)},className:"image-item"+(bannerPhoto===p?" picked":"")+(bannerPhoto&&bannerPhoto!==p?" dimmed":"")},h("img",{src:p,alt:""}))}))),
 h("div",{className:"actions"},
 h("button",{onClick:makeBanner,disabled:!bannerPhoto,className:"btn-primary"},banner?"Перегенерировать":"Сгенерировать баннер"),
-banner&&!attachedMedia?h("button",{onClick:attachBanner,className:"btn-primary accent btn-attach-pulse"},"\u{1F4CE} Прикрепить к посту"):null,
-banner&&attachedMedia?h("span",{className:"tool-badge",style:{alignSelf:"center"}},"\u2713 Уже прикреплён"):null
+banner?h("button",{onClick:attachBanner,className:"btn-primary accent btn-attach-pulse"},"\u{1F4CE} "+(attachedMediaList.length>0?"Добавить в карусель":"Прикрепить к посту")):null
 ),
 banner?h("img",{src:banner,className:"banner-preview"}):null
 )
@@ -1248,7 +1300,7 @@ text?h("div",{className:"result-card"},
 h("div",{className:"result-head"},
 h("span",{className:"result-label"},"Сгенерированный пост"),
 h("div",{style:{display:"flex",gap:8,alignItems:"center"}},
-attachedMedia?h("span",{className:"tool-badge"},"\u{1F4CE} С медиа"):null,
+attachedMediaList&&attachedMediaList.length>0?h("span",{className:"tool-badge"},"\u{1F4CE} Медиа: "+attachedMediaList.length):null,
 h("button",{onClick:function(){setSaveTemplateOpen(true)},className:"btn-ghost",style:{padding:"5px 10px",fontSize:10}},"\u{1F4BE} Сохранить как шаблон")
 )
 ),
@@ -1293,15 +1345,16 @@ h("button",{onClick:function(){var newItems=blocks.items.concat([{id:Math.random
 ):null,
 h("div",{className:"platforms"},PLATS.map(function(p){return h("button",{key:p.id,onClick:function(){setPlat(p.id)},className:"platform-tab"+(plat===p.id?" active":""),style:plat===p.id?{borderBottomColor:p.color,color:p.color,borderBottom:"2px solid "+p.color}:{}},p.name)})),
 h("div",{className:"preview"},
-attachedMedia?h("div",{style:{marginBottom:12,borderRadius:8,overflow:"hidden",maxWidth:500}},
-h("img",{src:attachedMedia.preview||attachedMedia.path,style:{width:"100%",display:"block"}})
+attachedMediaList&&attachedMediaList.length>0?h("div",{style:{marginBottom:12,borderRadius:8,overflow:"hidden",maxWidth:500,position:"relative"}},
+h("img",{src:attachedMediaList[0].preview||attachedMediaList[0].path,style:{width:"100%",display:"block"}}),
+attachedMediaList.length>1?h("div",{style:{position:"absolute",top:8,right:8,background:"rgba(0,0,0,0.75)",color:"#fff",padding:"4px 10px",borderRadius:6,fontSize:11,fontWeight:600,backdropFilter:"blur(6px)"}},"1 / "+attachedMediaList.length):null
 ):null,
 h("div",{className:"preview-text",dangerouslySetInnerHTML:{__html:renderTG(pt)}}),
 h("div",{className:"preview-counter"+(overLimit?" over":"")},String(pt.length)+" / "+(curPlat?String(curPlat.max):""))
 ),
 h("div",{className:"copy-row"},PLATS.map(function(p){return h("button",{key:p.id,onClick:function(){copyFor(p.id)},className:"copy-btn"+(copied===p.id?" copied":"")},copied===p.id?"\u2713 "+p.name:"\u2192 "+p.name)})),
 h("div",{className:"post-row"},
-PLATS.filter(function(p){return p.canPost}).map(function(p){return h("button",{key:p.id,onClick:function(){postTo(p.id)},disabled:posting!=="",className:"post-btn",style:{color:p.color,borderColor:p.color+"44"}},posting===p.id?"Отправка...":"\u26A1 "+p.name+(attachedMedia?" + \u{1F4CE}":""))}),
+PLATS.filter(function(p){return p.canPost}).map(function(p){return h("button",{key:p.id,onClick:function(){postTo(p.id)},disabled:posting!=="",className:"post-btn",style:{color:p.color,borderColor:p.color+"44"}},posting===p.id?"Отправка...":"\u26A1 "+p.name+(attachedMediaList&&attachedMediaList.length>0?" + \u{1F4CE}"+(attachedMediaList.length>1?"\u00D7"+attachedMediaList.length:""):""))}),
 postMsg?h("span",{className:"post-status "+(postMsg==="ok"?"ok":"err")},postMsg==="ok"?"\u2713 Отправлено":postMsg):null
 )
 ):null
