@@ -84,7 +84,7 @@ app.post('/api/auth/check', auth, (req, res) => {
   res.json({ ok: true, username: req.user.username });
 });
 
-// ═══════ CLAUDE API PROXY ═══════
+// ═══════ CLAUDE PROXY ═══════
 app.post('/api/generate', auth, async (req, res) => {
   if (!ANTHROPIC_API_KEY) return res.status(500).json({ error: 'ANTHROPIC_API_KEY not configured' });
   try {
@@ -122,11 +122,10 @@ app.post('/api/image-search', auth, async (req, res) => {
             url: x.urls.regular,
             thumb: x.urls.small,
             author: x.user.name,
-            source_url: x.links.html,
           })),
         });
       }
-    } catch (e) { console.error('Unsplash error:', e.message); }
+    } catch (e) { console.error('Unsplash:', e.message); }
   }
 
   if (PEXELS_KEY) {
@@ -142,11 +141,10 @@ app.post('/api/image-search', auth, async (req, res) => {
             url: x.src.large,
             thumb: x.src.medium,
             author: x.photographer,
-            source_url: x.url,
           })),
         });
       }
-    } catch (e) { console.error('Pexels error:', e.message); }
+    } catch (e) { console.error('Pexels:', e.message); }
   }
 
   res.json({ source: 'none', images: [] });
@@ -173,13 +171,16 @@ app.post('/api/post/telegram', auth, async (req, res) => {
   if (!TG_BOT_TOKEN) return res.status(500).json({ error: 'TG_BOT_TOKEN not configured' });
   if (!TG_CHANNEL_ID) return res.status(500).json({ error: 'TG_CHANNEL_ID not configured' });
 
-  const { text, media_path } = req.body;
+  const { text, media_path, rubric } = req.body;
   const apiBase = `${TG_LOCAL_API}/bot${TG_BOT_TOKEN}`;
+
+  console.log('[TG] Post request:', { text_length: text?.length, has_media: !!media_path, media_path });
 
   try {
     let result;
     if (media_path && existsSync(join(__dirname, media_path.replace(/^\//, '')))) {
       const filePath = join(__dirname, media_path.replace(/^\//, ''));
+      console.log('[TG] Sending with media:', filePath);
       const formData = new FormData();
       formData.append('chat_id', TG_CHANNEL_ID);
       formData.append('caption', text);
@@ -196,6 +197,8 @@ app.post('/api/post/telegram', auth, async (req, res) => {
         result = await fetch(`${apiBase}/sendPhoto`, { method: 'POST', body: formData });
       }
     } else {
+      if (media_path) console.log('[TG] media_path provided but file not found:', media_path);
+      console.log('[TG] Sending as text only');
       result = await fetch(`${apiBase}/sendMessage`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -209,15 +212,17 @@ app.post('/api/post/telegram', auth, async (req, res) => {
     }
 
     const data = await result.json();
+    console.log('[TG] Response:', data.ok ? 'OK' : data.description);
     if (data.ok) {
       db.prepare('INSERT INTO posts (rubric, content, platform, status, media_path) VALUES (?, ?, ?, ?, ?)').run(
-        req.body.rubric || 'unknown', text, 'telegram', 'sent', media_path || null
+        rubric || 'unknown', text, 'telegram', 'sent', media_path || null
       );
       res.json({ ok: true, message_id: data.result?.message_id });
     } else {
       res.status(400).json({ error: data.description || 'TG API error' });
     }
   } catch (e) {
+    console.error('[TG] Error:', e);
     res.status(500).json({ error: e.message });
   }
 });
@@ -225,7 +230,7 @@ app.post('/api/post/telegram', auth, async (req, res) => {
 // ═══════ VK POSTING ═══════
 app.post('/api/post/vk', auth, async (req, res) => {
   if (!VK_ACCESS_TOKEN || !VK_GROUP_ID) return res.status(500).json({ error: 'VK not configured' });
-  const { text } = req.body;
+  const { text, rubric } = req.body;
   try {
     const params = new URLSearchParams({
       owner_id: `-${VK_GROUP_ID}`,
@@ -238,7 +243,7 @@ app.post('/api/post/vk', auth, async (req, res) => {
     const data = await result.json();
     if (data.response) {
       db.prepare('INSERT INTO posts (rubric, content, platform, status) VALUES (?, ?, ?, ?)').run(
-        req.body.rubric || 'unknown', text, 'vk', 'sent'
+        rubric || 'unknown', text, 'vk', 'sent'
       );
       res.json({ ok: true, post_id: data.response.post_id });
     } else {
@@ -249,7 +254,7 @@ app.post('/api/post/vk', auth, async (req, res) => {
   }
 });
 
-// ═══════ POST HISTORY ═══════
+// ═══════ HISTORY ═══════
 app.get('/api/posts', auth, (req, res) => {
   const posts = db.prepare('SELECT * FROM posts ORDER BY created_at DESC LIMIT 100').all();
   res.json(posts);
@@ -260,7 +265,7 @@ app.get('*', (req, res) => {
 });
 
 app.listen(PORT, '0.0.0.0', () => {
-  console.log(`\n  Hard Locals Content Ops v1.5`);
+  console.log(`\n  Hard Locals Content Ops v6`);
   console.log(`  → http://0.0.0.0:${PORT}`);
   console.log(`  → Anthropic: ${ANTHROPIC_API_KEY ? '✓' : '✗'}`);
   console.log(`  → TG Bot: ${TG_BOT_TOKEN ? '✓' : '✗'}`);
