@@ -1,0 +1,16 @@
+services:
+  app:
+    build: .
+    container_name: hardlocals-ops
+    restart: unless-stopped
+    ports:
+      - "4000:4000"
+    env_file:
+      - .env
+    volumes:
+      - ./data:/app/data
+      - ./uploads:/app/uploads
+      - ./public:/app/public
+      - ./server.js:/app/server.js
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
