@@ -81,6 +81,22 @@ try {
   }
 } catch (e) { console.error('Migration error:', e.message); }
 
+// Scheduled posts (calendar)
+db.exec(`
+  CREATE TABLE IF NOT EXISTS scheduled (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    scheduled_date TEXT NOT NULL,
+    rubric TEXT NOT NULL,
+    title TEXT,
+    notes TEXT,
+    content TEXT,
+    status TEXT DEFAULT 'planned',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+  CREATE INDEX IF NOT EXISTS idx_scheduled_date ON scheduled(scheduled_date);
+`);
+
 const adminExists = db.prepare('SELECT id FROM users WHERE username = ?').get(ADMIN_USER);
 if (!adminExists) {
   const hash = bcrypt.hashSync(ADMIN_PASS, 10);
@@ -366,6 +382,122 @@ app.delete('/api/members/:id', auth, (req, res) => {
   res.json({ ok: true });
 });
 
+// ═══════ RSS FEED ═══════
+const RSS_SOURCES = [
+  { name: 'Motor.ru', url: 'https://motor.ru/exports/rss.xml' },
+  { name: 'Motogonki', url: 'https://motogonki.ru/rss.xml' },
+  { name: '110km', url: 'https://110km.ru/rss/news/' },
+  { name: 'RBC Авто', url: 'https://rssexport.rbc.ru/rbcnews/auto/30/full.rss' },
+];
+
+let rssCache = { items: [], fetched: 0 };
+
+function parseRSSItem(xml) {
+  const get = (tag) => {
+    const re = new RegExp(`<${tag}[^>]*>([\\s\\S]*?)<\\/${tag}>`, 'i');
+    const m = xml.match(re);
+    if (!m) return null;
+    let val = m[1].trim();
+    val = val.replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, '$1');
+    val = val.replace(/<[^>]+>/g, '').trim();
+    return val;
+  };
+  const getEnclosure = () => {
+    const m = xml.match(/<enclosure[^>]*url=["']([^"']+)["']/i);
+    return m ? m[1] : null;
+  };
+  const getImage = () => {
+    const enc = getEnclosure();
+    if (enc) return enc;
+    const mi = xml.match(/<media:content[^>]*url=["']([^"']+)["']/i);
+    if (mi) return mi[1];
+    const desc = xml.match(/<description[^>]*>([\s\S]*?)<\/description>/i);
+    if (desc) {
+      const imgM = desc[1].match(/<img[^>]*src=["']([^"']+)["']/i);
+      if (imgM) return imgM[1];
+    }
+    return null;
+  };
+  return {
+    title: get('title'),
+    link: get('link'),
+    description: get('description')?.slice(0, 200),
+    pubDate: get('pubDate'),
+    image: getImage(),
+  };
+}
+
+async function fetchRSS() {
+  const allItems = [];
+  await Promise.all(RSS_SOURCES.map(async (src) => {
+    try {
+      const res = await fetch(src.url, { signal: AbortSignal.timeout(10000) });
+      if (!res.ok) return;
+      const text = await res.text();
+      const itemRegex = /<item>([\s\S]*?)<\/item>/gi;
+      let m;
+      let count = 0;
+      while ((m = itemRegex.exec(text)) !== null && count < 10) {
+        const item = parseRSSItem(m[1]);
+        if (item.title && item.link) {
+          allItems.push({ ...item, source: src.name });
+          count++;
+        }
+      }
+    } catch (e) { console.error('RSS error', src.name, e.message); }
+  }));
+  // Sort by date desc
+  allItems.sort((a, b) => {
+    const da = a.pubDate ? new Date(a.pubDate).getTime() : 0;
+    const dbb = b.pubDate ? new Date(b.pubDate).getTime() : 0;
+    return dbb - da;
+  });
+  return allItems.slice(0, 30);
+}
+
+app.get('/api/rss', auth, async (req, res) => {
+  const now = Date.now();
+  if (rssCache.items.length > 0 && now - rssCache.fetched < 10 * 60 * 1000) {
+    return res.json(rssCache.items);
+  }
+  const items = await fetchRSS();
+  rssCache = { items, fetched: now };
+  res.json(items);
+});
+
+// ═══════ SCHEDULED POSTS (CALENDAR) ═══════
+app.get('/api/scheduled', auth, (req, res) => {
+  const { from, to } = req.query;
+  let rows;
+  if (from && to) {
+    rows = db.prepare('SELECT * FROM scheduled WHERE scheduled_date >= ? AND scheduled_date <= ? ORDER BY scheduled_date').all(from, to);
+  } else {
+    rows = db.prepare('SELECT * FROM scheduled ORDER BY scheduled_date').all();
+  }
+  res.json(rows);
+});
+
+app.post('/api/scheduled', auth, (req, res) => {
+  const { scheduled_date, rubric, title, notes, content } = req.body;
+  if (!scheduled_date || !rubric) return res.status(400).json({ error: 'scheduled_date and rubric required' });
+  const r = db.prepare('INSERT INTO scheduled (scheduled_date, rubric, title, notes, content) VALUES (?, ?, ?, ?, ?)')
+    .run(scheduled_date, rubric, title || null, notes || null, content || null);
+  res.json({ ok: true, id: r.lastInsertRowid });
+});
+
+app.put('/api/scheduled/:id', auth, (req, res) => {
+  const { scheduled_date, rubric, title, notes, content, status } = req.body;
+  const id = parseInt(req.params.id);
+  db.prepare('UPDATE scheduled SET scheduled_date=?, rubric=?, title=?, notes=?, content=?, status=?, updated_at=CURRENT_TIMESTAMP WHERE id=?')
+    .run(scheduled_date, rubric, title, notes, content, status || 'planned', id);
+  res.json({ ok: true });
+});
+
+app.delete('/api/scheduled/:id', auth, (req, res) => {
+  db.prepare('DELETE FROM scheduled WHERE id = ?').run(parseInt(req.params.id));
+  res.json({ ok: true });
+});
+
 // ═══════ HISTORY ═══════
 app.get('/api/posts', auth, (req, res) => {
   const posts = db.prepare('SELECT * FROM posts ORDER BY created_at DESC LIMIT 100').all();
@@ -377,7 +509,7 @@ app.get('*', (req, res) => {
 });
 
 app.listen(PORT, '0.0.0.0', () => {
-  console.log(`\n  Hard Locals Content Ops v6.5 (dashboard + fixed bday detection)`);
+  console.log(`\n  Hard Locals Content Ops v6.6 (RSS feed + calendar)`);
   console.log(`  → http://0.0.0.0:${PORT}`);
   console.log(`  → Anthropic: ${ANTHROPIC_API_KEY ? '✓' : '✗'}`);
   console.log(`  → TG Bot: ${TG_BOT_TOKEN ? '✓' : '✗'}`);

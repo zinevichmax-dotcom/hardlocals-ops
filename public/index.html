@@ -301,6 +301,12 @@ var membersOpenS=useS(false);
 var membersListS=useS([]);
 var memberEditS=useS(null);
 var upcomingBdayS=useS([]);
+var rssItemsS=useS([]);
+var rssLoadingS=useS(false);
+var calendarOpenS=useS(false);
+var scheduledS=useS([]);
+var scheduledEditS=useS(null);
+var calendarWeekStartS=useS(function(){var d=new Date();var day=d.getDay();var diff=d.getDate()-day+(day===0?-6:1);var m=new Date(d);m.setDate(diff);m.setHours(0,0,0,0);return m});
 var taR=useR(null);
 
 var token=tokenS[0],setToken=tokenS[1];
@@ -344,6 +350,12 @@ var membersOpen=membersOpenS[0],setMembersOpen=membersOpenS[1];
 var membersList=membersListS[0],setMembersList=membersListS[1];
 var memberEdit=memberEditS[0],setMemberEdit=memberEditS[1];
 var upcomingBday=upcomingBdayS[0],setUpcomingBday=upcomingBdayS[1];
+var rssItems=rssItemsS[0],setRssItems=rssItemsS[1];
+var rssLoading=rssLoadingS[0],setRssLoading=rssLoadingS[1];
+var calendarOpen=calendarOpenS[0],setCalendarOpen=calendarOpenS[1];
+var scheduled=scheduledS[0],setScheduled=scheduledS[1];
+var scheduledEdit=scheduledEditS[0],setScheduledEdit=scheduledEditS[1];
+var calendarWeekStart=calendarWeekStartS[0],setCalendarWeekStart=calendarWeekStartS[1];
 
 var rub=null;
 for(var i=0;i<RUBRICS.length;i++){if(RUBRICS[i].id===sel)rub=RUBRICS[i]}
@@ -351,8 +363,53 @@ var curPlat=null;
 for(var i=0;i<PLATS.length;i++){if(PLATS[i].id===plat)curPlat=PLATS[i]}
 
 useE(function(){
-if(token){apiCall("/api/auth/check",{},token).then(function(r){if(r.ok){setAuthed(true);loadUpcomingBdays()}else{localStorage.removeItem("token");setToken("")}}).catch(function(){localStorage.removeItem("token");setToken("")})}
+if(token){apiCall("/api/auth/check",{},token).then(function(r){if(r.ok){setAuthed(true);loadUpcomingBdays();loadRSS()}else{localStorage.removeItem("token");setToken("")}}).catch(function(){localStorage.removeItem("token");setToken("")})}
 },[token]);
+
+function loadRSS(){
+setRssLoading(true);
+fetch("/api/rss",{headers:{Authorization:"Bearer "+token}}).then(function(r){return r.json()}).then(function(d){setRssItems(Array.isArray(d)?d:[]);setRssLoading(false)}).catch(function(){setRssLoading(false)});
+}
+
+function useRSSInPost(item){
+pickRubric("moto_news");
+setTimeout(function(){
+setFields({news:"- "+item.title+" ("+item.link+")"});
+},50);
+}
+
+function fmtDate(iso){
+if(!iso)return "";
+var d=new Date(iso);
+var now=new Date();
+var diff=Math.round((now-d)/3600000);
+if(diff<1)return "только что";
+if(diff<24)return diff+" ч. назад";
+if(diff<48)return "вчера";
+return d.toLocaleDateString("ru-RU",{day:"numeric",month:"short"});
+}
+
+function loadScheduled(){
+var start=new Date(calendarWeekStart);
+var end=new Date(start);end.setDate(end.getDate()+28);
+var fmt=function(d){var m=d.getMonth()+1;var dd=d.getDate();return d.getFullYear()+"-"+(m<10?"0":"")+m+"-"+(dd<10?"0":"")+dd};
+fetch("/api/scheduled?from="+fmt(start)+"&to="+fmt(end),{headers:{Authorization:"Bearer "+token}}).then(function(r){return r.json()}).then(function(d){setScheduled(Array.isArray(d)?d:[])});
+}
+
+function openCalendar(){setCalendarOpen(true);loadScheduled()}
+
+function saveScheduled(item){
+var url=item.id?"/api/scheduled/"+item.id:"/api/scheduled";
+var method=item.id?"PUT":"POST";
+fetch(url,{method:method,headers:{"Content-Type":"application/json",Authorization:"Bearer "+token},body:JSON.stringify(item)}).then(function(r){return r.json()}).then(function(){setScheduledEdit(null);loadScheduled()});
+}
+
+function deleteScheduled(id){
+if(!confirm("Удалить запись?"))return;
+fetch("/api/scheduled/"+id,{method:"DELETE",headers:{Authorization:"Bearer "+token}}).then(function(){loadScheduled()});
+}
+
+function fmtYMD(d){var m=d.getMonth()+1;var dd=d.getDate();return d.getFullYear()+"-"+(m<10?"0":"")+m+"-"+(dd<10?"0":"")+dd}
 
 function loadUpcomingBdays(){
 fetch("/api/members/upcoming-birthdays",{headers:{Authorization:"Bearer "+token}}).then(function(r){return r.json()}).then(function(d){setUpcomingBday(Array.isArray(d)?d:[])}).catch(function(){});
@@ -694,6 +751,55 @@ h("button",{onClick:function(){setSaveTemplateOpen(false);setSaveTemplateName(""
 )
 )
 ):null,
+calendarOpen?h("div",{className:"modal-backdrop",onClick:function(e){if(e.target===e.currentTarget){setCalendarOpen(false);setScheduledEdit(null)}}},
+h("div",{className:"modal",style:{maxWidth:1000}},
+h("div",{className:"modal-head"},
+h("div",null,h("div",{className:"modal-title"},"\u{1F4C5} Контент-календарь"),h("div",{className:"modal-sub"},"Планирование публикаций")),
+h("div",{style:{display:"flex",gap:6}},
+h("button",{onClick:function(){var d=new Date(calendarWeekStart);d.setDate(d.getDate()-7);setCalendarWeekStart(d);setTimeout(loadScheduled,50)},className:"btn-ghost"},"\u2190"),
+h("button",{onClick:function(){var d=new Date();var day=d.getDay();var diff=d.getDate()-day+(day===0?-6:1);var m=new Date(d);m.setDate(diff);m.setHours(0,0,0,0);setCalendarWeekStart(m);setTimeout(loadScheduled,50)},className:"btn-ghost"},"Сегодня"),
+h("button",{onClick:function(){var d=new Date(calendarWeekStart);d.setDate(d.getDate()+7);setCalendarWeekStart(d);setTimeout(loadScheduled,50)},className:"btn-ghost"},"\u2192"),
+h("button",{onClick:function(){setCalendarOpen(false);setScheduledEdit(null)},className:"btn-ghost"},"Закрыть")
+)
+),
+h("div",{className:"modal-body"},
+scheduledEdit?h("div",{style:{padding:14,background:"var(--bg-elev)",border:"1px solid var(--line)",borderRadius:10,marginBottom:12}},
+h("div",{className:"field"},h("div",{className:"field-label"},"Дата *"),h("input",{type:"date",className:"input",value:scheduledEdit.scheduled_date||"",onChange:function(e){setScheduledEdit(Object.assign({},scheduledEdit,{scheduled_date:e.target.value}))}})),
+h("div",{className:"field"},h("div",{className:"field-label"},"Рубрика *"),h("select",{className:"input",value:scheduledEdit.rubric||"",onChange:function(e){setScheduledEdit(Object.assign({},scheduledEdit,{rubric:e.target.value}))}},h("option",{value:""},"— выбери —"),RUBRICS.map(function(r){return h("option",{key:r.id,value:r.id},r.icon+" "+r.name)}))),
+h("div",{className:"field"},h("div",{className:"field-label"},"Заголовок / тема"),h("input",{className:"input",placeholder:"Анонс Питера",value:scheduledEdit.title||"",onChange:function(e){setScheduledEdit(Object.assign({},scheduledEdit,{title:e.target.value}))}})),
+h("div",{className:"field"},h("div",{className:"field-label"},"Заметки"),h("textarea",{className:"textarea",placeholder:"Что именно публиковать, детали, ссылки...",value:scheduledEdit.notes||"",onChange:function(e){setScheduledEdit(Object.assign({},scheduledEdit,{notes:e.target.value}))}})),
+h("div",{className:"actions"},
+h("button",{onClick:function(){saveScheduled(scheduledEdit)},disabled:!scheduledEdit.scheduled_date||!scheduledEdit.rubric,className:"btn-primary accent"},"\u{1F4BE} Сохранить"),
+h("button",{onClick:function(){setScheduledEdit(null)},className:"btn-secondary"},"Отмена")
+)
+):null,
+h("div",{style:{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:6}},(function(){
+var days=[];
+var start=new Date(calendarWeekStart);
+var todayStr=fmtYMD(new Date());
+for(var i=0;i<28;i++){
+var d=new Date(start);d.setDate(start.getDate()+i);
+var ymd=fmtYMD(d);
+var dayPosts=scheduled.filter(function(s){return s.scheduled_date===ymd});
+var isToday=ymd===todayStr;
+var dayName=["Пн","Вт","Ср","Чт","Пт","Сб","Вс"][(d.getDay()+6)%7];
+days.push(h("div",{key:i,style:{background:isToday?"rgba(232,93,31,0.08)":"var(--bg-elev)",border:"1px solid "+(isToday?"var(--accent)":"var(--line-soft)"),borderRadius:8,padding:8,minHeight:100,cursor:"pointer",display:"flex",flexDirection:"column",gap:4},onClick:function(ev){if(ev.target===ev.currentTarget||ev.target.classList.contains("day-header")){setScheduledEdit({scheduled_date:ymd,rubric:"",title:"",notes:""})}}},
+h("div",{className:"day-header",style:{fontSize:10,color:isToday?"var(--accent)":"var(--text-dim)",fontWeight:isToday?700:500,textTransform:"uppercase",letterSpacing:"0.05em",pointerEvents:"none"}},dayName+" \u00B7 "+d.getDate()+"."+((d.getMonth()+1)<10?"0":"")+(d.getMonth()+1)),
+dayPosts.map(function(p){var r=null;for(var j=0;j<RUBRICS.length;j++){if(RUBRICS[j].id===p.rubric)r=RUBRICS[j]}
+return h("div",{key:p.id,style:{background:"var(--bg-card)",border:"1px solid var(--line-soft)",borderRadius:5,padding:"4px 6px",fontSize:10,cursor:"pointer",display:"flex",alignItems:"center",gap:4},onClick:function(e){e.stopPropagation();setScheduledEdit(p)}},
+h("span",null,r?r.icon:"\u{1F4CC}"),
+h("span",{style:{flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",color:"var(--text)"}},p.title||(r?r.name:p.rubric)),
+h("button",{onClick:function(e){e.stopPropagation();deleteScheduled(p.id)},style:{background:"transparent",border:"none",color:"var(--text-dim)",cursor:"pointer",padding:0,fontSize:10}},"\u2715")
+);
+}),
+dayPosts.length===0?h("div",{className:"day-header",style:{fontSize:9,color:"var(--text-dim)",opacity:0.4,pointerEvents:"none"}},"\u2014"):null
+));
+}
+return days;
+})())
+)
+)
+):null,
 membersOpen?h("div",{className:"modal-backdrop",onClick:function(e){if(e.target===e.currentTarget){setMembersOpen(false);setMemberEdit(null)}}},
 h("div",{className:"modal"},
 h("div",{className:"modal-head"},
@@ -765,6 +871,7 @@ h("div",{className:"brand"},h("span",{className:"brand-name"},"HARD LOCALS"),h("
 ),
 h("div",{className:"header-right"},
 h("div",{className:"status-pill"},h("span",{className:"status-dot"}),h("span",{className:"status-text"},"API Online")),
+h("button",{onClick:openCalendar,className:"header-btn"},"\u{1F4C5} Календарь"),
 h("button",{onClick:openMembers,className:"header-btn",style:upcomingBday.some(function(m){return isBdayToday(m.birthday)})?{color:"#fff",background:"var(--accent)",borderColor:"var(--accent)",fontWeight:600}:{}},"\u{1F465} Клуб"+(upcomingBday.length>0?" \u{1F382}":"")),
 h("button",{onClick:openHistory,className:"header-btn"},"История"),
 h("button",{onClick:logout,className:"header-btn"},"Выйти")
@@ -812,7 +919,7 @@ h("button",{onClick:function(){pickRubric("birthday");setTimeout(function(){useM
 }))
 ),
 // QUICK ACTIONS
-h("div",{style:{background:"var(--bg-card)",border:"1px solid var(--line-soft)",borderRadius:14,padding:24}},
+h("div",{style:{background:"var(--bg-card)",border:"1px solid var(--line-soft)",borderRadius:14,padding:24,marginBottom:16}},
 h("div",{style:{fontFamily:"'Unbounded',sans-serif",fontSize:14,fontWeight:700,marginBottom:16}},"Быстрый старт"),
 h("div",{style:{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(180px,1fr))",gap:10}},
 ["moto_news","trip_announce","merch","kind_reminder","custom"].map(function(id){
@@ -824,6 +931,34 @@ h("div",{style:{fontSize:10,color:"var(--text-dim)"}},r.freq)
 );
 })
 )
+),
+// RSS FEED
+h("div",{style:{background:"linear-gradient(180deg,var(--bg-card) 0%,var(--bg-elev) 100%)",border:"1px solid var(--line)",borderRadius:14,padding:24}},
+h("div",{style:{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16}},
+h("div",{style:{display:"flex",alignItems:"center",gap:12}},
+h("div",{style:{fontSize:20}},"\u{1F4F0}"),
+h("div",null,
+h("div",{style:{fontFamily:"'Unbounded',sans-serif",fontSize:14,fontWeight:700}},"Свежие мотоновости"),
+h("div",{style:{fontSize:11,color:"var(--text-dim)"}},rssItems.length?"Motor.ru \u00B7 Motogonki \u00B7 110km \u00B7 RBC":"Загружаю...")
+)
+),
+h("button",{onClick:loadRSS,className:"btn-ghost",disabled:rssLoading},rssLoading?"...":"\u21BB Обновить")
+),
+rssLoading&&rssItems.length===0?h("div",{style:{textAlign:"center",padding:30,color:"var(--text-dim)",fontSize:12}},"Загружаю ленту..."):
+rssItems.length===0?h("div",{style:{textAlign:"center",padding:30,color:"var(--text-dim)",fontSize:12}},"Нет новостей"):
+h("div",{style:{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(280px,1fr))",gap:12}},rssItems.slice(0,12).map(function(item,idx){
+return h("div",{key:idx,style:{background:"var(--bg-elev)",border:"1px solid var(--line-soft)",borderRadius:10,overflow:"hidden",display:"flex",flexDirection:"column",transition:"all 0.2s"}},
+item.image?h("div",{style:{width:"100%",aspectRatio:"16/9",overflow:"hidden",background:"var(--bg)"}},h("img",{src:item.image,style:{width:"100%",height:"100%",objectFit:"cover"},onError:function(e){e.target.style.display="none"}})):null,
+h("div",{style:{padding:12,flex:1,display:"flex",flexDirection:"column"}},
+h("div",{style:{fontSize:9,color:"var(--text-dim)",marginBottom:4,textTransform:"uppercase",letterSpacing:"0.1em"}},item.source+" \u00B7 "+fmtDate(item.pubDate)),
+h("div",{style:{fontSize:12,fontWeight:600,lineHeight:1.4,marginBottom:8,color:"var(--text)",flex:1}},item.title),
+h("div",{style:{display:"flex",gap:6,marginTop:"auto"}},
+h("button",{onClick:function(){useRSSInPost(item)},className:"btn-ghost",style:{padding:"5px 10px",fontSize:10,color:"var(--accent)",flex:1}},"\u21A9 В пост"),
+h("a",{href:item.link,target:"_blank",className:"btn-ghost",style:{padding:"5px 10px",fontSize:10,textAlign:"center"}},"\u2197")
+)
+)
+);
+}))
 )
 )
 ):
