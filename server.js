@@ -342,29 +342,116 @@ app.post('/api/post/telegram', auth, async (req, res) => {
 });
 
 // ═══════ VK POSTING ═══════
+
+// Helper: upload one photo to VK and return "photo{owner_id}_{photo_id}"
+async function vkUploadPhoto(filePath) {
+  // 1. Get upload server
+  const uploadServerRes = await fetch(
+    `https://api.vk.com/method/photos.getWallUploadServer?group_id=${VK_GROUP_ID}&access_token=${VK_ACCESS_TOKEN}&v=5.199`
+  );
+  const uploadServer = await uploadServerRes.json();
+  if (!uploadServer.response) throw new Error('VK getWallUploadServer: ' + (uploadServer.error?.error_msg || 'unknown'));
+
+  // 2. Upload file
+  const fd = new FormData();
+  const buf = readFileSync(filePath);
+  fd.append('photo', new Blob([buf]), 'photo.jpg');
+  const uploadRes = await fetch(uploadServer.response.upload_url, { method: 'POST', body: fd });
+  const uploaded = await uploadRes.json();
+  if (!uploaded.photo || uploaded.photo === '[]') throw new Error('VK upload: empty photo response');
+
+  // 3. Save
+  const saveParams = new URLSearchParams({
+    group_id: VK_GROUP_ID,
+    server: String(uploaded.server),
+    photo: uploaded.photo,
+    hash: uploaded.hash,
+    access_token: VK_ACCESS_TOKEN,
+    v: '5.199',
+  });
+  const saveRes = await fetch(`https://api.vk.com/method/photos.saveWallPhoto?${saveParams}`);
+  const saved = await saveRes.json();
+  if (!saved.response || !saved.response[0]) throw new Error('VK saveWallPhoto: ' + (saved.error?.error_msg || 'unknown'));
+  const p = saved.response[0];
+  return `photo${p.owner_id}_${p.id}`;
+}
+
+// Helper: upload video to VK and return "video{owner_id}_{video_id}"
+async function vkUploadVideo(filePath, name) {
+  const saveRes = await fetch(
+    `https://api.vk.com/method/video.save?group_id=${VK_GROUP_ID}&name=${encodeURIComponent(name || 'video')}&access_token=${VK_ACCESS_TOKEN}&v=5.199`
+  );
+  const saved = await saveRes.json();
+  if (!saved.response) throw new Error('VK video.save: ' + (saved.error?.error_msg || 'unknown'));
+
+  const fd = new FormData();
+  const buf = readFileSync(filePath);
+  fd.append('video_file', new Blob([buf]), name || 'video.mp4');
+  const uploadRes = await fetch(saved.response.upload_url, { method: 'POST', body: fd });
+  const uploaded = await uploadRes.json();
+  if (uploaded.error) throw new Error('VK video upload: ' + JSON.stringify(uploaded.error));
+  return `video${saved.response.owner_id}_${saved.response.video_id}`;
+}
+
 app.post('/api/post/vk', auth, async (req, res) => {
   if (!VK_ACCESS_TOKEN || !VK_GROUP_ID) return res.status(500).json({ error: 'VK not configured' });
-  const { text, rubric } = req.body;
+  const { text, media_path, media_paths, rubric } = req.body;
+
+  // Normalize paths
+  let paths = [];
+  if (Array.isArray(media_paths) && media_paths.length > 0) paths = media_paths;
+  else if (media_path) paths = [media_path];
+  paths = paths.filter(p => existsSync(join(__dirname, p.replace(/^\//, ''))));
+
+  console.log('[VK] Post request:', { text_length: text?.length, media_count: paths.length });
+
   try {
+    // Upload media to VK
+    const attachments = [];
+    for (const p of paths) {
+      const filePath = join(__dirname, p.replace(/^\//, ''));
+      const isVideo = p.match(/\.(mp4|mov|avi|webm)$/i);
+      try {
+        const att = isVideo
+          ? await vkUploadVideo(filePath, p.split('/').pop())
+          : await vkUploadPhoto(filePath);
+        attachments.push(att);
+        console.log('[VK] Uploaded', att);
+      } catch (e) {
+        console.error('[VK] Upload error for', p, e.message);
+        return res.status(400).json({ error: `Ошибка загрузки медиа в VK: ${e.message}` });
+      }
+    }
+
+    // Post to wall
     const params = new URLSearchParams({
       owner_id: `-${VK_GROUP_ID}`,
       from_group: '1',
-      message: text,
+      message: text || '',
       access_token: VK_ACCESS_TOKEN,
       v: '5.199',
     });
-    const result = await fetch(`https://api.vk.com/method/wall.post?${params}`);
+    if (attachments.length > 0) params.set('attachments', attachments.join(','));
+
+    const result = await fetch(`https://api.vk.com/method/wall.post`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: params,
+    });
     const data = await result.json();
     if (data.response) {
-      db.prepare('INSERT INTO posts (rubric, content, platform, status) VALUES (?, ?, ?, ?)').run(
-        rubric || 'unknown', text, 'vk', 'sent'
+      db.prepare('INSERT INTO posts (rubric, content, platform, status, media_path) VALUES (?, ?, ?, ?, ?)').run(
+        rubric || 'unknown', text, 'vk', 'sent', paths.join(',') || null
       );
-      res.json({ ok: true, post_id: data.response.post_id });
+      console.log('[VK] Posted', data.response.post_id);
+      return res.json({ ok: true, post_id: data.response.post_id });
     } else {
-      res.status(400).json({ error: data.error?.error_msg || 'VK API error' });
+      console.error('[VK] API error:', data.error);
+      return res.status(400).json({ error: data.error?.error_msg || 'VK API error' });
     }
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    console.error('[VK] Error:', e);
+    return res.status(500).json({ error: e.message });
   }
 });
 
@@ -734,7 +821,7 @@ app.get('*', (req, res) => {
 });
 
 app.listen(PORT, '0.0.0.0', () => {
-  console.log(`\n  Hard Locals Content Ops v7.4 (media carousel + bulk upload)`);
+  console.log(`\n  Hard Locals Content Ops v7.5 (VK autoposting with media)`);
   console.log(`  → http://0.0.0.0:${PORT}`);
   console.log(`  → Anthropic: ${ANTHROPIC_API_KEY ? '✓' : '✗'}`);
   console.log(`  → TG Bot: ${TG_BOT_TOKEN ? '✓' : '✗'}`);

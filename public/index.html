@@ -266,7 +266,27 @@ var SITE_PHOTOS=[
 "https://thb.tildacdn.com/tild6637-3636-4432-b262-653365633830/-/resize/600x/-/empty/photo_2025-10-20_221.jpeg"
 ];
 
-function adapt(t,pid){if(!t)return"";var o=t;if(pid==="ig"&&o.indexOf("#")<0)o+="\n\n#hardlocals #мотоклуб #мотоклубмосква #мотосезон2026 #мотожизнь";return o;}
+function adapt(t,pid){
+if(!t)return "";
+var o=t;
+if(pid==="vk"||pid==="max"){
+// VK/MAX не понимают HTML теги — конвертируем в plain text
+// <a href="URL">text</a> → "text (URL)" если текст != URL, иначе просто URL
+o=o.replace(/<a\s+href=['"]([^'"]+)['"][^>]*>([\s\S]*?)<\/a>/g,function(m,url,txt){
+var clean=txt.replace(/<[^>]+>/g,"").trim();
+if(!clean||clean===url)return url;
+return clean+" "+url;
+});
+// Убираем остальные теги
+o=o.replace(/<b>|<\/b>|<strong>|<\/strong>/g,"");
+o=o.replace(/<i>|<\/i>|<em>|<\/em>/g,"");
+o=o.replace(/<[^>]+>/g,"");
+// Декодируем HTML entities
+o=o.replace(/&amp;/g,"&").replace(/&lt;/g,"<").replace(/&gt;/g,">").replace(/&quot;/g,'"').replace(/&#39;/g,"'").replace(/&nbsp;/g," ");
+}
+if(pid==="ig"&&o.indexOf("#")<0)o+="\n\n#hardlocals #мотоклуб #мотоклубмосква #мотосезон2026 #мотожизнь";
+return o;
+}
 function apiCall(path,body,token){var headers={"Content-Type":"application/json"};if(token)headers["Authorization"]="Bearer "+token;return fetch(path,{method:"POST",headers:headers,body:JSON.stringify(body)}).then(function(r){return r.json()});}
 
 function renderTG(txt){
