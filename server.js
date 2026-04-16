@@ -1120,8 +1120,15 @@ app.post('/api/scheduled/generate-week', auth, async (req, res) => {
   });
   
   if (uniqueMissed.length > 0) {
+    // Find first future date that still has TIME available (not today if late)
     const futureDates = [...new Set(slots.map(s => s.date))].sort();
-    const fallbackDate = futureDates[0] || todayStr;
+    const nowH = new Date().getHours();
+    let fallbackDate = futureDates.find(d => d > todayStr) || futureDates[0];
+    // If only today is available and it's past 18:00, use tomorrow
+    if (fallbackDate === todayStr && nowH >= 18) {
+      const tmrw = new Date(); tmrw.setDate(tmrw.getDate() + 1);
+      fallbackDate = tmrw.getFullYear() + '-' + String(tmrw.getMonth()+1).padStart(2,'0') + '-' + String(tmrw.getDate()).padStart(2,'0');
+    }
     const missedLabels = {
       'moto_news': 'Дайджест мотоновостей',
       'kind_reminder': 'Напоминание о безопасности', 
