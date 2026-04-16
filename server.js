@@ -384,11 +384,13 @@ app.delete('/api/members/:id', auth, (req, res) => {
 
 // ═══════ RSS FEED ═══════
 const RSS_SOURCES = [
-  { name: 'Motogonki', url: 'https://motogonki.ru/rss.xml' },
-  { name: '110km', url: 'https://110km.ru/rss/news/' },
-  { name: 'Motor Моно', url: 'https://motor.ru/rss/moto.xml' },
-  { name: 'Motor.ru', url: 'https://motor.ru/exports/rss.xml' },
-  { name: 'RBC Авто', url: 'https://rssexport.rbc.ru/rbcnews/auto/30/full.rss' },
+  { name: 'Motogonki', url: 'https://motogonki.ru/rss.xml', motoOnly: true },
+  { name: '110km', url: 'https://110km.ru/rss/news/', motoOnly: false },
+  { name: 'Motor Мото', url: 'https://motor.ru/rss/moto.xml', motoOnly: true },
+  { name: 'Motor.ru', url: 'https://motor.ru/exports/rss.xml', motoOnly: false },
+  { name: 'Bikepost', url: 'https://bikepost.ru/rss.xml', motoOnly: true },
+  { name: 'За рулём Мото', url: 'https://www.zr.ru/rss/news/moto/', motoOnly: true },
+  { name: 'Baiker', url: 'https://baiker.ru/rss/', motoOnly: true },
 ];
 
 let rssCache = { items: [], fetched: 0 };
@@ -433,7 +435,7 @@ async function fetchRSS() {
   await Promise.all(RSS_SOURCES.map(async (src) => {
     try {
       const res = await fetch(src.url, { signal: AbortSignal.timeout(10000) });
-      if (!res.ok) return;
+      if (!res.ok) { console.error('RSS', src.name, 'status', res.status); return; }
       const text = await res.text();
       const itemRegex = /<item>([\s\S]*?)<\/item>/gi;
       let m;
@@ -441,44 +443,42 @@ async function fetchRSS() {
       while ((m = itemRegex.exec(text)) !== null && count < 20) {
         const item = parseRSSItem(m[1]);
         if (item.title && item.link) {
-          allItems.push({ ...item, source: src.name });
+          allItems.push({ ...item, source: src.name, motoOnly: src.motoOnly });
           count++;
         }
       }
+      console.log('RSS', src.name, count, 'items');
     } catch (e) { console.error('RSS error', src.name, e.message); }
   }));
 
-  // Filter: only motorcycle-related
-  const MOTO_KEYWORDS = [
-    'мото', 'мотоцик', 'байк', 'байкер', 'эндуро', 'скутер', 'чоппер',
-    'Harley', 'Honda', 'Yamaha', 'Kawasaki', 'Suzuki', 'Ducati', 'BMW Motorrad',
-    'KTM', 'Triumph', 'Aprilia', 'MV Agusta', 'Indian', 'Royal Enfield',
-    'MotoGP', 'Dakar', 'Superbike', 'Урал ', 'Иж ', 'Минск',
-    'шлем', 'экипировк', 'Ridez', 'racer',
-    'motorcycle', 'motorbike', 'scooter', 'biker',
+  // Mixed sources: filter out pure-car content
+  const EXCLUDE_STRONG = [
+    'haval', 'хавал', 'tank ', 'танк ', 'chery', 'черри', 'geely', 'джили',
+    'lada', 'лада', 'kia', 'киа', 'toyota', 'тойота',
+    'кроссовер', 'седан', 'хэтчбек', 'хетчбек', 'внедорожник',
+    'премиум-седан', 'спорткар', 'суперкар', 'пикап',
   ];
-  // Exclude obviously non-moto
-  const EXCLUDE = [
-    'автомобил', 'легков', 'грузовик', 'кроссовер', 'внедорожник',
-    'седан', 'хэтчбек', 'хетчбек', 'универсал',
+  const MOTO_HINTS = [
+    'мото', 'мотоцик', 'байк', 'байкер', 'эндуро', 'скутер', 'чоппер',
+    'harley', 'ducati', 'kawasaki', 'yamaha', 'motorrad', 'ktm', 'triumph',
+    'aprilia', 'motogp', 'dakar', 'superbike', 'motorcycle', 'motorbike',
   ];
 
-  const motoItems = allItems.filter(item => {
-    const haystack = ((item.title || '') + ' ' + (item.description || '')).toLowerCase();
-    const hasMoto = MOTO_KEYWORDS.some(kw => haystack.includes(kw.toLowerCase()));
-    if (!hasMoto) return false;
-    // But if mostly about cars, skip
-    const exCount = EXCLUDE.filter(kw => haystack.includes(kw)).length;
-    const moCount = MOTO_KEYWORDS.filter(kw => haystack.includes(kw.toLowerCase())).length;
-    return moCount >= exCount;
+  const filtered = allItems.filter(item => {
+    if (item.motoOnly) return true;
+    const h = ((item.title || '') + ' ' + (item.description || '')).toLowerCase();
+    const hasMoto = MOTO_HINTS.some(kw => h.includes(kw));
+    const hasCar = EXCLUDE_STRONG.some(kw => h.includes(kw));
+    if (hasCar && !hasMoto) return false;
+    return hasMoto;
   });
 
-  motoItems.sort((a, b) => {
+  filtered.sort((a, b) => {
     const da = a.pubDate ? new Date(a.pubDate).getTime() : 0;
     const dbb = b.pubDate ? new Date(b.pubDate).getTime() : 0;
     return dbb - da;
   });
-  return motoItems.slice(0, 30);
+  return filtered.slice(0, 40);
 }
 
 app.get('/api/rss', auth, async (req, res) => {
@@ -486,10 +486,58 @@ app.get('/api/rss', auth, async (req, res) => {
   if (rssCache.items.length > 0 && now - rssCache.fetched < 10 * 60 * 1000) {
     return res.json(rssCache.items);
   }
-  const items = await fetchRSS();
-  rssCache = { items, fetched: now };
-  res.json(items);
+  const rssItems = await fetchRSS();
+  const tgItems = await fetchTelegramChannels();
+  const merged = [...rssItems, ...tgItems];
+  merged.sort((a, b) => {
+    const da = a.pubDate ? new Date(a.pubDate).getTime() : 0;
+    const dbb = b.pubDate ? new Date(b.pubDate).getTime() : 0;
+    return dbb - da;
+  });
+  rssCache = { items: merged.slice(0, 50), fetched: now };
+  res.json(rssCache.items);
 });
+
+// Telegram public channels via t.me/s/ preview
+const TG_CHANNELS = ['motorussia', 'biketoria', 'moto_ru', 'motogonki_ru'];
+
+async function fetchTelegramChannels() {
+  const items = [];
+  await Promise.all(TG_CHANNELS.map(async (ch) => {
+    try {
+      const res = await fetch(`https://t.me/s/${ch}`, { signal: AbortSignal.timeout(10000), headers: { 'User-Agent': 'Mozilla/5.0' } });
+      if (!res.ok) return;
+      const html = await res.text();
+      // Extract posts
+      const postRegex = /<div class="tgme_widget_message_text[^"]*"[^>]*>([\s\S]*?)<\/div>[\s\S]*?<a class="tgme_widget_message_date"[^>]*href="([^"]+)"[^>]*>[\s\S]*?datetime="([^"]+)"/gi;
+      let m;
+      let count = 0;
+      while ((m = postRegex.exec(html)) !== null && count < 5) {
+        const textRaw = m[1].replace(/<[^>]+>/g, ' ').replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&quot;/g, '"').replace(/\s+/g, ' ').trim();
+        if (!textRaw || textRaw.length < 20) continue;
+        // Extract image if any
+        const imgRegex = new RegExp(`tgme_widget_message_date[^>]*href="${m[2].replace(/\//g, '\\/').replace(/\./g, '\\.')}"[\\s\\S]*?style="background-image:url\\(['"]([^'"]+)['"]\\)`, 'i');
+        let image = null;
+        const imgBlockRegex = /tgme_widget_message_photo_wrap[^"]*"[^>]*style="[^"]*background-image:url\(['"]([^'"]+)['"]/gi;
+        let imgM;
+        while ((imgM = imgBlockRegex.exec(html)) !== null) {
+          if (imgM.index < m.index && imgM.index > (m.index - 3000)) image = imgM[1];
+        }
+        items.push({
+          title: textRaw.slice(0, 120) + (textRaw.length > 120 ? '...' : ''),
+          description: textRaw.slice(0, 300),
+          link: m[2],
+          pubDate: m[3],
+          image,
+          source: `TG: @${ch}`,
+        });
+        count++;
+      }
+      console.log('TG', ch, count, 'posts');
+    } catch (e) { console.error('TG error', ch, e.message); }
+  }));
+  return items;
+}
 
 // ═══════ SCHEDULED POSTS (CALENDAR) ═══════
 app.get('/api/scheduled', auth, (req, res) => {
@@ -535,7 +583,7 @@ app.get('*', (req, res) => {
 });
 
 app.listen(PORT, '0.0.0.0', () => {
-  console.log(`\n  Hard Locals Content Ops v6.7 (moto-only RSS)`);
+  console.log(`\n  Hard Locals Content Ops v6.8 (more RSS + TG channels)`);
   console.log(`  → http://0.0.0.0:${PORT}`);
   console.log(`  → Anthropic: ${ANTHROPIC_API_KEY ? '✓' : '✗'}`);
   console.log(`  → TG Bot: ${TG_BOT_TOKEN ? '✓' : '✗'}`);
