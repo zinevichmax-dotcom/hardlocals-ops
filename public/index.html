@@ -379,8 +379,15 @@ function useMemberForBirthday(m){
 var fv={name:m.name+(m.nickname?" ("+m.nickname+")":"")};
 if(m.bike||m.notes){fv.fact=[m.bike,m.notes].filter(Boolean).join(". ")}
 setFields(fv);
-if(m.photo_path){setBannerPhoto(m.photo_path);setBannerText((m.nickname||m.name).toUpperCase()+", С ДР!");setBannerOpen(true)}
 setMembersOpen(false);setMemberEdit(null);
+if(m.photo_path){
+// Add to uploaded list if not already there
+var photoUrl=m.photo_path.indexOf("/")===0?window.location.origin+m.photo_path:m.photo_path;
+setUploaded(function(prev){return prev.indexOf(photoUrl)>=0?prev:prev.concat([photoUrl])});
+setBannerPhoto(photoUrl);
+setBannerText((m.nickname||m.name).toUpperCase()+", С ДР!");
+setBannerOpen(true);
+}
 }
 
 function handleMemberPhotoUpload(file,cb){
@@ -541,9 +548,19 @@ var w=photo.width*scale,hh=photo.height*scale;
 ctx.drawImage(photo,(1200-w)/2,(630-hh)/2,w,hh);
 ctx.filter="none";
 ctx.fillStyle="rgba(0,0,0,0.55)";ctx.fillRect(0,0,1200,630);
-ctx.fillStyle="#fff";ctx.font="bold 140px Unbounded, sans-serif";ctx.textAlign="center";ctx.textBaseline="middle";
+ctx.fillStyle="#fff";
+ctx.textAlign="center";ctx.textBaseline="middle";
 ctx.shadowColor="rgba(0,0,0,0.8)";ctx.shadowBlur=20;
-ctx.fillText(bannerText.toUpperCase(),600,315);
+// auto-fit font size
+var text=bannerText.toUpperCase();
+var maxWidth=1080;
+var fontSize=140;
+ctx.font="bold "+fontSize+"px Unbounded, sans-serif";
+while(ctx.measureText(text).width>maxWidth&&fontSize>40){
+fontSize-=6;
+ctx.font="bold "+fontSize+"px Unbounded, sans-serif";
+}
+ctx.fillText(text,600,315);
 ctx.shadowBlur=0;ctx.font="28px JetBrains Mono, monospace";ctx.fillStyle="rgba(255,255,255,0.7)";
 ctx.fillText("HARDLOCALS.CLUB",600,420);
 setBanner(canvas.toDataURL("image/jpeg",0.92));
@@ -782,9 +799,9 @@ h("div",{className:"panel-body"},
 h("div",{className:"field"},h("div",{className:"field-label"},"Текст на баннере"),h("input",{value:bannerText,onChange:function(e){setBannerText(e.target.value)},className:"input"})),
 h("div",{className:"field"},
 h("div",{className:"field-label"},"Загрузить своё фото"),
-h("label",{htmlFor:"photo-upload",className:"dropzone",onDragOver:function(e){e.preventDefault();e.currentTarget.classList.add("over")},onDragLeave:function(e){e.currentTarget.classList.remove("over")},onDrop:function(e){e.preventDefault();e.currentTarget.classList.remove("over");handlePhotoUpload(e.dataTransfer.files)}},
-h("div",{style:{fontSize:20,marginBottom:6,opacity:0.4}},"\u2191"),
-h("div",null,"Перетащи фото сюда или кликни")
+h("div",{className:"dropzone",onClick:function(){document.getElementById("photo-upload").click()},onDragOver:function(e){e.preventDefault();e.stopPropagation();e.currentTarget.classList.add("over")},onDragEnter:function(e){e.preventDefault();e.stopPropagation()},onDragLeave:function(e){e.preventDefault();e.stopPropagation();e.currentTarget.classList.remove("over")},onDrop:function(e){e.preventDefault();e.stopPropagation();e.currentTarget.classList.remove("over");if(e.dataTransfer.files&&e.dataTransfer.files.length>0)handlePhotoUpload(e.dataTransfer.files)}},
+h("div",{style:{fontSize:20,marginBottom:6,opacity:0.4,pointerEvents:"none"}},"\u2191"),
+h("div",{style:{pointerEvents:"none"}},"Перетащи фото сюда или кликни")
 ),
 h("input",{id:"photo-upload",type:"file",multiple:true,accept:"image/*",style:{display:"none"},onChange:function(e){handlePhotoUpload(e.target.files)}})
 ),
@@ -857,6 +874,9 @@ h("button",{onClick:addNewsFromUrl,disabled:!addUrl,className:"btn-secondary"},"
 ):null,
 h("div",{className:"platforms"},PLATS.map(function(p){return h("button",{key:p.id,onClick:function(){setPlat(p.id)},className:"platform-tab"+(plat===p.id?" active":""),style:plat===p.id?{borderBottomColor:p.color,color:p.color,borderBottom:"2px solid "+p.color}:{}},p.name)})),
 h("div",{className:"preview"},
+attachedMedia?h("div",{style:{marginBottom:12,borderRadius:8,overflow:"hidden",maxWidth:500}},
+h("img",{src:attachedMedia.preview||attachedMedia.path,style:{width:"100%",display:"block"}})
+):null,
 h("div",{className:"preview-text",dangerouslySetInnerHTML:{__html:renderTG(pt)}}),
 h("div",{className:"preview-counter"+(overLimit?" over":"")},String(pt.length)+" / "+(curPlat?String(curPlat.max):""))
 ),
