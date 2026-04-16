@@ -65,11 +65,21 @@ db.exec(`
     birthday TEXT,
     bike TEXT,
     notes TEXT,
+    photo_path TEXT,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
   );
   CREATE INDEX IF NOT EXISTS idx_members_bday ON members(birthday);
 `);
+
+// Migration: add photo_path if missing
+try {
+  const cols = db.prepare("PRAGMA table_info(members)").all();
+  if (!cols.find(c => c.name === 'photo_path')) {
+    db.exec('ALTER TABLE members ADD COLUMN photo_path TEXT');
+    console.log('Migration: added photo_path to members');
+  }
+} catch (e) { console.error('Migration error:', e.message); }
 
 const adminExists = db.prepare('SELECT id FROM users WHERE username = ?').get(ADMIN_USER);
 if (!adminExists) {
@@ -335,18 +345,18 @@ app.get('/api/members/upcoming-birthdays', auth, (req, res) => {
 });
 
 app.post('/api/members', auth, (req, res) => {
-  const { name, nickname, birthday, bike, notes } = req.body;
+  const { name, nickname, birthday, bike, notes, photo_path } = req.body;
   if (!name) return res.status(400).json({ error: 'name required' });
-  const result = db.prepare('INSERT INTO members (name, nickname, birthday, bike, notes) VALUES (?, ?, ?, ?, ?)')
-    .run(name, nickname || null, birthday || null, bike || null, notes || null);
+  const result = db.prepare('INSERT INTO members (name, nickname, birthday, bike, notes, photo_path) VALUES (?, ?, ?, ?, ?, ?)')
+    .run(name, nickname || null, birthday || null, bike || null, notes || null, photo_path || null);
   res.json({ ok: true, id: result.lastInsertRowid });
 });
 
 app.put('/api/members/:id', auth, (req, res) => {
-  const { name, nickname, birthday, bike, notes } = req.body;
+  const { name, nickname, birthday, bike, notes, photo_path } = req.body;
   const id = parseInt(req.params.id);
-  db.prepare('UPDATE members SET name = ?, nickname = ?, birthday = ?, bike = ?, notes = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?')
-    .run(name, nickname || null, birthday || null, bike || null, notes || null, id);
+  db.prepare('UPDATE members SET name = ?, nickname = ?, birthday = ?, bike = ?, notes = ?, photo_path = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?')
+    .run(name, nickname || null, birthday || null, bike || null, notes || null, photo_path || null, id);
   res.json({ ok: true });
 });
 
@@ -367,7 +377,7 @@ app.get('*', (req, res) => {
 });
 
 app.listen(PORT, '0.0.0.0', () => {
-  console.log(`\n  Hard Locals Content Ops v6.2 (members + templates)`);
+  console.log(`\n  Hard Locals Content Ops v6.3 (member photos)`);
   console.log(`  → http://0.0.0.0:${PORT}`);
   console.log(`  → Anthropic: ${ANTHROPIC_API_KEY ? '✓' : '✗'}`);
   console.log(`  → TG Bot: ${TG_BOT_TOKEN ? '✓' : '✗'}`);

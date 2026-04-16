@@ -377,12 +377,18 @@ fetch("/api/members/"+id,{method:"DELETE",headers:{Authorization:"Bearer "+token
 
 function useMemberForBirthday(m){
 var fv={name:m.name+(m.nickname?" ("+m.nickname+")":"")};
-if(m.bike||m.notes){
-fv.fact=[m.bike,m.notes].filter(Boolean).join(". ");
-}
+if(m.bike||m.notes){fv.fact=[m.bike,m.notes].filter(Boolean).join(". ")}
 setFields(fv);
-setMembersOpen(false);
-setMemberEdit(null);
+if(m.photo_path){setBannerPhoto(m.photo_path);setBannerText((m.nickname||m.name).toUpperCase()+", С ДР!");setBannerOpen(true)}
+setMembersOpen(false);setMemberEdit(null);
+}
+
+function handleMemberPhotoUpload(file,cb){
+if(!file||!file.type.startsWith("image/"))return;
+var fd=new FormData();fd.append("file",file);
+fetch("/api/upload",{method:"POST",headers:{Authorization:"Bearer "+token},body:fd}).then(function(r){return r.json()}).then(function(d){
+if(d.path)cb(d.path);
+});
 }
 
 function isBdayToday(birthday){
@@ -671,6 +677,17 @@ h("button",{onClick:function(){setMembersOpen(false);setMemberEdit(null)},classN
 ),
 h("div",{className:"modal-body"},
 memberEdit?h("div",{style:{padding:14,background:"var(--bg-elev)",border:"1px solid var(--line)",borderRadius:10,marginBottom:12}},
+h("div",{className:"field"},
+h("div",{className:"field-label"},"Фото"),
+h("div",{style:{display:"flex",alignItems:"center",gap:12}},
+memberEdit.photo_path?h("img",{src:memberEdit.photo_path,style:{width:72,height:72,borderRadius:"50%",objectFit:"cover",border:"1px solid var(--line)"}}):h("div",{style:{width:72,height:72,borderRadius:"50%",background:"var(--bg-card)",border:"1px solid var(--line)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:22,color:"var(--text-dim)"}},"\u{1F464}"),
+h("label",{style:{padding:"8px 14px",background:"var(--bg-card)",border:"1px solid var(--line)",borderRadius:7,fontSize:11,cursor:"pointer",color:"var(--text-muted)"}},
+memberEdit.photo_path?"Заменить фото":"Загрузить фото",
+h("input",{type:"file",accept:"image/*",style:{display:"none"},onChange:function(e){handleMemberPhotoUpload(e.target.files[0],function(path){setMemberEdit(Object.assign({},memberEdit,{photo_path:path}))})}})
+),
+memberEdit.photo_path?h("button",{onClick:function(){setMemberEdit(Object.assign({},memberEdit,{photo_path:null}))},className:"btn-ghost",style:{padding:"6px 10px",fontSize:10,color:"var(--danger)"}},"\u2715"):null
+)
+),
 h("div",{className:"field"},h("div",{className:"field-label"},"Имя *"),h("input",{className:"input",placeholder:"Дмитрий",value:memberEdit.name||"",onChange:function(e){setMemberEdit(Object.assign({},memberEdit,{name:e.target.value}))}})),
 h("div",{className:"field"},h("div",{className:"field-label"},"Ник / позывной"),h("input",{className:"input",placeholder:"Dima",value:memberEdit.nickname||"",onChange:function(e){setMemberEdit(Object.assign({},memberEdit,{nickname:e.target.value}))}})),
 h("div",{className:"field"},h("div",{className:"field-label"},"Дата рождения"),h("input",{className:"input",type:"date",value:memberEdit.birthday||"",onChange:function(e){setMemberEdit(Object.assign({},memberEdit,{birthday:e.target.value}))}})),
@@ -687,7 +704,10 @@ var days=daysUntilBday(m.birthday);
 var today=isBdayToday(m.birthday);
 var soon=days!==null&&days<=7;
 return h("div",{key:m.id,className:"history-item",style:today?{borderColor:"var(--accent)",background:"rgba(232,93,31,0.06)"}:soon?{borderColor:"rgba(232,93,31,0.2)"}:{}},
-h("div",{className:"history-meta"},
+h("div",{style:{display:"flex",gap:12,alignItems:"center"}},
+m.photo_path?h("img",{src:m.photo_path,style:{width:44,height:44,borderRadius:"50%",objectFit:"cover",flexShrink:0,border:"1px solid var(--line)"}}):h("div",{style:{width:44,height:44,borderRadius:"50%",background:"var(--bg-card)",border:"1px solid var(--line-soft)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:16,color:"var(--text-dim)",flexShrink:0}},"\u{1F464}"),
+h("div",{style:{flex:1}},
+h("div",{className:"history-meta",style:{marginBottom:4}},
 h("span",{style:{fontSize:13,fontWeight:600,color:"var(--text)"}},m.name),
 m.nickname?h("span",{style:{fontSize:11,color:"var(--text-muted)"}},"("+m.nickname+")"):null,
 today?h("span",{style:{fontSize:10,color:"var(--accent)",fontWeight:700}},"\u{1F382} СЕГОДНЯ!"):
@@ -699,7 +719,9 @@ h("button",{onClick:function(){setMemberEdit(m)},className:"btn-ghost",style:{pa
 h("button",{onClick:function(){deleteMember(m.id)},className:"btn-ghost",style:{padding:"4px 10px",fontSize:10,color:"var(--danger)"}},"\u2715")
 )
 ),
-m.bike||m.notes?h("div",{className:"history-text"},[m.bike,m.notes].filter(Boolean).join(" \u00B7 ")):null
+m.bike||m.notes?h("div",{style:{fontSize:11,color:"var(--text-muted)",lineHeight:1.5}},[m.bike,m.notes].filter(Boolean).join(" \u00B7 ")):null
+)
+)
 );
 })
 )
