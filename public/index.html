@@ -395,6 +395,7 @@ var usersListS=useS([]);
 var usersOpenS=useS(false);
 var toastsS=useS([]);
 var historyFilterS=useS("");
+var scheduleFormS=useS(null);
 var selS=useS(null);
 var fieldsS=useS({});
 var textS=useS("");
@@ -461,6 +462,7 @@ var usersList=usersListS[0],setUsersList=usersListS[1];
 var usersOpen=usersOpenS[0],setUsersOpen=usersOpenS[1];
 var toasts=toastsS[0],setToasts=toastsS[1];
 var historyFilter=historyFilterS[0],setHistoryFilter=historyFilterS[1];
+var scheduleForm=scheduleFormS[0],setScheduleForm=scheduleFormS[1];
 
 function toast(msg,type){
 var id=Date.now()+Math.random();
@@ -712,6 +714,13 @@ return Math.round((b-t)/86400000);
 }
 
 useE(function(){if(taR.current){taR.current.style.height="auto";taR.current.style.height=taR.current.scrollHeight+"px"}},[text]);
+
+// Keyboard shortcut: Cmd+Enter to generate
+useE(function(){
+function handleKey(e){if((e.metaKey||e.ctrlKey)&&e.key==="Enter"&&sel&&!loading){e.preventDefault();generate()}}
+window.addEventListener("keydown",handleKey);
+return function(){window.removeEventListener("keydown",handleKey)};
+},[sel,loading]);
 
 function doLogin(){
 setLoginB(true);setLoginE("");
@@ -1071,11 +1080,12 @@ if(d.added===0)toast("Новых мемов не найдено","info");
 }).catch(function(){setHumorLoading(false)});
 }
 function approveHumor(item){
-var date=prompt("На какую дату? (ГГГГ-ММ-ДД)",fmtYMD(new Date()));
-if(!date)return;
-var time=prompt("Время?","12:00");
-if(!time)return;
-apiCall("/api/humor-queue/"+item.id+"/approve",{scheduled_date:date,scheduled_time:time},token).then(function(){loadHumorQueue()});
+// Auto-schedule to next available humor slot
+var tomorrow=new Date();tomorrow.setDate(tomorrow.getDate()+1);
+apiCall("/api/humor-queue/"+item.id+"/approve",{scheduled_date:fmtYMD(tomorrow),scheduled_time:"12:00"},token).then(function(){
+toast("Мем добавлен в календарь на завтра 12:00","ok");
+loadHumorQueue();
+});
 }
 function rejectHumor(item){
 apiCall("/api/humor-queue/"+item.id+"/reject",{},token).then(function(){loadHumorQueue()});
@@ -1123,15 +1133,17 @@ toast("Сохранено в очередь","ok");
 }
 
 function scheduleFromEditor(){
-var dateStr=prompt("На какую дату запланировать? (ГГГГ-ММ-ДД)",fmtYMD(new Date()));
-if(!dateStr)return;
-var timeStr=prompt("Время публикации? (ЧЧ:ММ)","10:00");
-if(!timeStr)return;
+setScheduleForm({date:fmtYMD(new Date()),time:"10:00"});
+}
+
+function submitScheduleForm(){
+if(!scheduleForm||!text)return;
 var mediaPaths=attachedMediaList&&attachedMediaList.length>0?attachedMediaList.map(function(m){return m.path}).join(","):null;
-var body={scheduled_date:dateStr,scheduled_time:timeStr,rubric:rub?rub.id:"custom",title:(rub?rub.name:"Пост")+" "+dateStr,notes:"",content:text,media_path:mediaPaths,status:"ready",items:[]};
+var body={scheduled_date:scheduleForm.date,scheduled_time:scheduleForm.time,rubric:rub?rub.id:"custom",title:(rub?rub.name:"Пост")+" "+scheduleForm.date,notes:"",content:text,media_path:mediaPaths,status:"ready",items:[]};
 fetch("/api/scheduled",{method:"POST",headers:{"Content-Type":"application/json",Authorization:"Bearer "+token},body:JSON.stringify(body)}).then(function(r){return r.json()}).then(function(d){
 if(d.error){toast(d.error,"err");return}
-toast("Запланировано на "+dateStr+" "+timeStr,"ok");
+toast("Запланировано на "+scheduleForm.date+" "+scheduleForm.time,"ok");
+setScheduleForm(null);
 });
 }
 
@@ -1994,7 +2006,13 @@ h("span",{className:"preview-counter"+(overLimit?" over":"")},String(pt.length)+
 h("div",{className:"copy-row"},PLATS.map(function(p){return h("button",{key:p.id,onClick:function(){copyFor(p.id)},className:"copy-btn"+(copied===p.id?" copied":"")},copied===p.id?"\u2713 "+p.name:"\u2192 "+p.name)})),
 h("div",{className:"post-row"},
 pendingDraftId&&text?h("button",{onClick:saveDraftToCalendar,className:"post-btn",style:{color:"#4ade80",borderColor:"rgba(74,222,128,0.4)",background:"rgba(74,222,128,0.08)",fontWeight:700}},"\u{1F4BE} В календарь"):null,
-!pendingDraftId&&text?h("button",{onClick:scheduleFromEditor,className:"post-btn",style:{color:"#4ade80",borderColor:"rgba(74,222,128,0.4)",background:"rgba(74,222,128,0.08)"}},"\u{1F4C5} Запланировать"):null,
+!pendingDraftId&&text&&!scheduleForm?h("button",{onClick:scheduleFromEditor,className:"post-btn",style:{color:"#4ade80",borderColor:"rgba(74,222,128,0.4)",background:"rgba(74,222,128,0.08)"}},"\u{1F4C5} Запланировать"):null,
+scheduleForm?h("div",{style:{display:"flex",alignItems:"center",gap:8,padding:"4px 0",flex:"1 0 100%"}},
+h("input",{type:"date",className:"input",value:scheduleForm.date,onChange:function(e){setScheduleForm(Object.assign({},scheduleForm,{date:e.target.value}))},style:{width:160,padding:"10px 12px"}}),
+h("input",{type:"time",className:"input",value:scheduleForm.time,onChange:function(e){setScheduleForm(Object.assign({},scheduleForm,{time:e.target.value}))},style:{width:120,padding:"10px 12px"}}),
+h("button",{onClick:submitScheduleForm,className:"post-btn",style:{color:"#4ade80",borderColor:"rgba(74,222,128,0.4)",background:"rgba(74,222,128,0.15)",fontWeight:700}},"\u2705 Запланировать"),
+h("button",{onClick:function(){setScheduleForm(null)},className:"post-btn",style:{color:"var(--text-dim)",borderColor:"var(--line-soft)"}},"\u2715")
+):null,
 PLATS.filter(function(p){return p.canPost}).map(function(p){return h("button",{key:p.id,onClick:function(){postTo(p.id)},disabled:posting!=="",className:"post-btn",style:{color:p.color,borderColor:p.color+"44"}},posting===p.id?"Отправка...":"\u26A1 "+p.name+(attachedMediaList&&attachedMediaList.length>0?" + \u{1F4CE}"+(attachedMediaList.length>1?"\u00D7"+attachedMediaList.length:""):""))}),
 postMsg?h("span",{className:"post-status "+(postMsg==="ok"?"ok":"err")},postMsg==="ok"?"\u2713 Отправлено":postMsg):null
 )
