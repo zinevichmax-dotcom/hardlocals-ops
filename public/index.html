@@ -1605,13 +1605,9 @@ h("div",{className:"brand"},h("span",{className:"brand-name"},"HARD LOCALS"),h("
 sel?h("button",{onClick:function(){setSel(null);setText("");setFields({});setBlocks(null);setBanner(null);setBannerOpen(false);setImgSearch(false);setAttachedMediaList([])},className:"header-btn",style:{marginLeft:16}},"\u2190 Главная"):null
 ),
 h("div",{className:"header-right"},
-h("div",{className:"status-pill"},h("span",{className:"status-dot"}),h("span",{className:"status-text"},"API Online")),
 h("button",{onClick:openCalendar,className:"header-btn"},"\u{1F4C5} Календарь"),
 h("button",{onClick:openMembers,className:"header-btn",style:upcomingBday.some(function(m){return isBdayToday(m.birthday)})?{color:"#fff",background:"var(--accent)",borderColor:"var(--accent)",fontWeight:600}:{}},"\u{1F465} Клуб"+(upcomingBday.length>0?" \u{1F382}":"")),
-h("button",{onClick:openStats,className:"header-btn"},"\u{1F4CA} Статистика"),
-h("button",{onClick:openHistory,className:"header-btn"},"История"),
-userRole==="admin"?h("button",{onClick:openUsers,className:"header-btn"},"\u{1F465} Пользователи"):null,
-h("button",{onClick:logout,className:"header-btn"},"\u{1F6AA} Выйти")
+h("button",{onClick:logout,className:"header-btn"},"\u{1F6AA}")
 )
 ),
 h("div",{className:"body"},
@@ -1623,6 +1619,13 @@ g.ids.map(function(id){var r=null;for(var i=0;i<RUBRICS.length;i++){if(RUBRICS[i
 return h("div",{key:id,className:"rubric-item"+(active?" active":""),onClick:function(){pickRubric(id)}},
 h("span",{className:"rubric-icon-s"},r.icon),h("span",{className:"rubric-name-s"},r.name),h("span",{className:"rubric-freq-s"},r.freq));})
 );})
+,
+h("div",{style:{borderTop:"1px solid var(--line-soft)",margin:"12px 0 0",padding:"16px 0 0"}},
+h("div",{className:"sidebar-group-label"},"\u{1F527} Инструменты"),
+h("div",{className:"rubric-item",onClick:function(){openStats();if(window.innerWidth<768)setSidebar(false)}},h("span",{className:"rubric-icon-s"},"\u{1F4CA}"),h("span",{className:"rubric-name-s"},"Статистика")),
+h("div",{className:"rubric-item",onClick:function(){openHistory();if(window.innerWidth<768)setSidebar(false)}},h("span",{className:"rubric-icon-s"},"\u{1F4DC}"),h("span",{className:"rubric-name-s"},"История постов")),
+userRole==="admin"?h("div",{className:"rubric-item",onClick:function(){openUsers();if(window.innerWidth<768)setSidebar(false)}},h("span",{className:"rubric-icon-s"},"\u{1F465}"),h("span",{className:"rubric-name-s"},"Пользователи")):null
+)
 ):null,
 !rub?h("div",{className:"work",style:{padding:"32px 40px"}},
 h("div",{className:"work-inner"},
