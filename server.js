@@ -22,6 +22,7 @@ const {
   VK_ACCESS_TOKEN,
   VK_GROUP_ID,
   VK_ALBUM_ID,
+  NOTIFY_CHAT_ID,
   UNSPLASH_KEY,
   PEXELS_KEY,
 } = process.env;
@@ -282,8 +283,21 @@ async function runScheduler() {
           post.rubric || 'unknown', text, 'telegram', 'sent', post.media_path || null
         );
         console.log(`[SCHEDULER] Published #${post.id}: "${post.title || post.rubric}"`);
+        // Notify operator
+        if (NOTIFY_CHAT_ID && TG_BOT_TOKEN) {
+          try {
+            await fetch(`${apiBase}/sendMessage`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ chat_id: NOTIFY_CHAT_ID, text: `✅ Опубликовано: ${post.title || post.rubric}\n📅 ${post.scheduled_date} ${post.scheduled_time}\n📢 ${TG_CHANNEL_ID}`, disable_notification: true }),
+            });
+          } catch (ne) { console.error('[NOTIFY]', ne.message); }
+        }
       } else {
         db.prepare("UPDATE scheduled SET status = 'error', updated_at = CURRENT_TIMESTAMP WHERE id = ?").run(post.id);
+        if (NOTIFY_CHAT_ID && TG_BOT_TOKEN) {
+          try { await fetch(`${apiBase}/sendMessage`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ chat_id: NOTIFY_CHAT_ID, text: `⚠️ Ошибка публикации: ${post.title || post.rubric}\n📅 ${post.scheduled_date} ${post.scheduled_time}` }) }); } catch (ne) {}
+        }
       }
     } catch (e) {
       console.error(`[SCHEDULER] Error publishing #${post.id}:`, e.message);
@@ -1843,11 +1857,12 @@ app.get('*', (req, res) => {
 });
 
 app.listen(PORT, '0.0.0.0', () => {
-  console.log(`\n  Hard Locals Content Ops v11.0 (multi-user: admin/editor roles)`);
+  console.log(`\n  Hard Locals Content Ops v11.1 (TG preview bubble + notifications + strikethrough)`);
   console.log(`  → http://0.0.0.0:${PORT}`);
   console.log(`  → Anthropic: ${ANTHROPIC_API_KEY ? '✓' : '✗'}`);
   console.log(`  → TG Bot: ${TG_BOT_TOKEN ? '✓' : '✗'}`);
   console.log(`  → VK: ${VK_ACCESS_TOKEN ? '✓' : '✗'}${VK_ALBUM_ID ? ' (album: ' + VK_ALBUM_ID + ')' : ' (no album)'}`);
+  console.log(`  → Notify: ${NOTIFY_CHAT_ID ? '✓ chat ' + NOTIFY_CHAT_ID : '✗ (add NOTIFY_CHAT_ID to .env)'}`);
   console.log(`  → Unsplash: ${UNSPLASH_KEY ? '✓' : '✗'}`);
   console.log(`  → Pexels: ${PEXELS_KEY ? '✓' : '✗'}`);
   console.log(`  → TZ: ${process.env.TZ || 'UTC (add TZ=Europe/Moscow to .env!)'}`);
