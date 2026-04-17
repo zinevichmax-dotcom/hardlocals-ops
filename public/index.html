@@ -216,6 +216,20 @@ a{color:inherit;text-decoration:none}
 .platform-chip{padding:3px 8px;border-radius:4px;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em}
 .history-text{font-size:12px;color:var(--text-muted);line-height:1.6;max-height:100px;overflow:hidden;white-space:pre-wrap}
 
+/* TOAST */
+.toast-container{position:fixed;bottom:24px;right:24px;z-index:9999;display:flex;flex-direction:column;gap:8px;pointer-events:none}
+.toast{padding:12px 20px;border-radius:10px;font-size:13px;font-weight:500;color:#fff;pointer-events:auto;animation:toastIn 0.3s ease,toastOut 0.3s ease 2.7s;opacity:0;animation-fill-mode:forwards;max-width:380px;box-shadow:0 8px 30px rgba(0,0,0,0.4)}
+.toast.ok{background:rgba(74,222,128,0.9);backdrop-filter:blur(12px)}
+.toast.err{background:rgba(239,68,68,0.9);backdrop-filter:blur(12px)}
+.toast.info{background:rgba(59,130,246,0.9);backdrop-filter:blur(12px)}
+@keyframes toastIn{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}
+@keyframes toastOut{from{opacity:1}to{opacity:0}}
+
+/* STATUS LEGEND */
+.status-legend{display:flex;gap:16px;padding:10px 0;justify-content:center;flex-wrap:wrap}
+.status-legend-item{display:flex;align-items:center;gap:5px;font-size:10px;color:var(--text-dim)}
+.status-legend-dot{width:8px;height:8px;border-radius:2px}
+
 /* ═══════ MOBILE RESPONSIVE ═══════ */
 @media(max-width:768px){
   .header{padding:10px 14px}
@@ -264,6 +278,8 @@ a{color:inherit;text-decoration:none}
   
   .media-thumb-wrap{width:56px;height:56px}
   .media-add-btn{width:56px;height:56px}
+  .toast-container{bottom:16px;right:16px;left:16px}
+  .toast{max-width:100%}
 }
 
 /* Calendar mobile */
@@ -377,6 +393,7 @@ var authS=useS(false);
 var userRoleS=useS("editor");
 var usersListS=useS([]);
 var usersOpenS=useS(false);
+var toastsS=useS([]);
 var selS=useS(null);
 var fieldsS=useS({});
 var textS=useS("");
@@ -441,6 +458,13 @@ var authed=authS[0],setAuthed=authS[1];
 var userRole=userRoleS[0],setUserRole=userRoleS[1];
 var usersList=usersListS[0],setUsersList=usersListS[1];
 var usersOpen=usersOpenS[0],setUsersOpen=usersOpenS[1];
+var toasts=toastsS[0],setToasts=toastsS[1];
+
+function toast(msg,type){
+var id=Date.now()+Math.random();
+setToasts(function(prev){return prev.concat([{id:id,msg:msg,type:type||"info"}])});
+setTimeout(function(){setToasts(function(prev){return prev.filter(function(t){return t.id!==id})})},3000);
+}
 var sel=selS[0],setSel=selS[1];
 var fields=fieldsS[0],setFields=fieldsS[1];
 var text=textS[0],setText=textS[1];
@@ -564,7 +588,7 @@ function singleNewsToPost(item){setSingleNews(item);pickRubric("moto_news");setT
 
 // Generate digest from collected items
 function generateFromItems(sched){
-if(!sched.items||sched.items.length===0){alert("Сначала собери новости в этот дайджест");return}
+if(!sched.items||sched.items.length===0){toast("Сначала собери новости","err");return}
 var items=sched.items;
 var itemsText=items.map(function(it,i){return(i+1)+". Заголовок: "+it.title+"\n   URL (использовать в гиперссылке): "+it.link+(it.description?"\n   Краткое описание: "+it.description:"")}).join("\n\n");
 pickRubric(sched.rubric||"moto_news");
@@ -836,15 +860,15 @@ var p=prompt("Пароль:");
 if(!p)return;
 var r=prompt("Роль (admin или editor):","editor");
 apiCall("/api/users",{username:u,password:p,role:r||"editor"},token).then(function(d){
-if(d.error){alert(d.error);return}
-alert("Пользователь "+u+" создан!");
+if(d.error){toast(d.error,"err");return}
+toast("Пользователь "+u+" создан","ok");
 loadUsers();
 });
 }
 function deleteUser(id,name){
 if(!confirm("Удалить пользователя "+name+"?"))return;
 fetch("/api/users/"+id,{method:"DELETE",headers:{Authorization:"Bearer "+token}}).then(function(r){return r.json()}).then(function(d){
-if(d.error){alert(d.error);return}
+if(d.error){toast(d.error,"err");return}
 loadUsers();
 });
 }
@@ -852,8 +876,8 @@ function resetPassword(id){
 var p=prompt("Новый пароль:");
 if(!p)return;
 fetch("/api/users/"+id+"/password",{method:"PUT",headers:{"Content-Type":"application/json",Authorization:"Bearer "+token},body:JSON.stringify({password:p})}).then(function(r){return r.json()}).then(function(d){
-if(d.error){alert(d.error);return}
-alert("Пароль обновлён");
+if(d.error){toast(d.error,"err");return}
+toast("Пароль обновлён","ok");
 });
 }
 
@@ -867,7 +891,7 @@ reader.readAsDataURL(file);
 }
 
 function makeBanner(){
-if(!bannerPhoto){alert("Выбери фото");return}
+if(!bannerPhoto){toast("Сначала выбери фото","err");return}
 var canvas=document.createElement("canvas");canvas.width=1200;canvas.height=630;
 var ctx=canvas.getContext("2d");
 var photo=new Image();
@@ -896,12 +920,12 @@ ctx.shadowBlur=0;ctx.font="28px JetBrains Mono, monospace";ctx.fillStyle="rgba(2
 ctx.fillText("HARDLOCALS.CLUB",600,420);
 setBanner(canvas.toDataURL("image/jpeg",0.92));
 };
-photo.onerror=function(){alert("Ошибка загрузки фото")};
+photo.onerror=function(){toast("Ошибка загрузки фото","err")};
 photo.src=bannerPhoto;
 }
 
 function attachBanner(){
-if(!banner){alert("Сначала сгенерируй баннер");return}
+if(!banner){toast("Сначала сгенерируй баннер","err");return}
 fetch(banner).then(function(r){return r.blob()}).then(function(blob){
 var fd=new FormData();fd.append("file",blob,"banner.jpg");
 return fetch("/api/upload",{method:"POST",headers:{Authorization:"Bearer "+token},body:fd});
@@ -913,8 +937,8 @@ setBannerOpen(false);
 setBanner(null);
 setBannerPhoto("");
 }
-}else{alert("Ошибка: "+(d.error||"не удалось"))}
-}).catch(function(e){alert("Ошибка: "+e.message)});
+}else{toast(d.error||"Не удалось","err")}
+}).catch(function(e){toast(e.message,"err")});
 }
 
 function searchImages(){if(!imgQuery)return;setImgLoading(true);setImgResults([]);apiCall("/api/image-search",{query:imgQuery},token).then(function(d){setImgResults(d.images||[]);setImgLoading(false)}).catch(function(){setImgLoading(false)})}
@@ -926,7 +950,7 @@ var arr=prev||[];
 if(arr.length>=10){overflow=true;return arr}
 return arr.concat([item]);
 });
-if(overflow)alert("Максимум 10 медиа в одном посте");
+if(overflow)toast("Максимум 10 медиа","err");
 return !overflow;
 }
 
@@ -942,13 +966,13 @@ var fd=new FormData();fd.append("file",file);
 console.log("[ATTACH] uploading",file.name,file.type,file.size);
 fetch("/api/upload",{method:"POST",headers:{Authorization:"Bearer "+token},body:fd}).then(function(r){return r.json()}).then(function(d){
 console.log("[ATTACH] upload response",d);
-if(!d.path){alert("Ошибка загрузки: "+(d.error||"нет пути"));return}
+if(!d.path){toast("Ошибка загрузки","err");return}
 var reader=new FileReader();
 reader.onload=function(e){
 addAttachedMedia({path:d.path,preview:e.target.result,name:file.name,type:file.type.startsWith("video/")?"video":"image"});
 };
 reader.readAsDataURL(file);
-}).catch(function(e){console.error("[ATTACH] error",e);alert("Ошибка: "+e.message)});
+}).catch(function(e){console.error("[ATTACH] error",e);toast(e.message,"err")});
 });
 }
 
@@ -956,7 +980,7 @@ function downloadVideoFromUrl(url){
 setVideoDownloading(true);
 apiCall("/api/media/download-url",{url:url},token).then(function(d){
 setVideoDownloading(false);
-if(d.error){alert("Ошибка: "+d.error);return}
+if(d.error){toast(d.error,"err");return}
 if(d.path){
 addAttachedMedia({path:d.path,preview:d.path,name:d.originalName||"video.mp4",type:"video"});
 setTimeout(function(){
@@ -964,7 +988,7 @@ var el=document.querySelector(".media-attached-bar");
 if(el)el.scrollIntoView({behavior:"smooth",block:"center"});
 },100);
 }
-}).catch(function(e){setVideoDownloading(false);alert("Ошибка: "+e.message)});
+}).catch(function(e){setVideoDownloading(false);toast(e.message,"err")});
 }
 
 function loadStats(){
@@ -978,8 +1002,8 @@ var fmt=function(d){var m=d.getMonth()+1;var dd=d.getDate();return d.getFullYear
 var weekStr=fmt(ws);
 if(!confirm("Сгенерировать контент-план на неделю с "+weekStr+"?"))return;
 apiCall("/api/scheduled/generate-week",{week_start:weekStr},token).then(function(d){
-if(d.error){alert(d.error);return}
-alert("Создано "+d.count+" черновиков!");
+if(d.error){toast(d.error,"err");return}
+toast("Создано "+d.count+" черновиков","ok");
 loadScheduled();
 });
 }
@@ -992,12 +1016,12 @@ if(!confirm("AI сгенерирует тексты для ВСЕХ пустых
 setBatchGenerating(true);
 apiCall("/api/scheduled/batch-generate",{week_start:weekStr},token).then(function(d){
 setBatchGenerating(false);
-if(d.error){alert(d.error);return}
+if(d.error){toast(d.error,"err");return}
 var msg="Сгенерировано: "+d.count+"/"+d.total;
 if(d.errors&&d.errors.length>0)msg+="\nОшибки: "+d.errors.length;
-alert(msg);
+toast(msg,"ok");
 loadScheduled();
-}).catch(function(e){setBatchGenerating(false);alert("Ошибка: "+e.message)});
+}).catch(function(e){setBatchGenerating(false);toast(e.message,"err")});
 }
 
 function approveAllDrafts(){
@@ -1005,15 +1029,15 @@ var ws=calendarWeekStart;
 var fmt=function(d){var m=d.getMonth()+1;var dd=d.getDate();return d.getFullYear()+"-"+(m<10?"0":"")+m+"-"+(dd<10?"0":"")+dd};
 if(!confirm("Все черновики с текстом на этой неделе → В очередь?"))return;
 apiCall("/api/scheduled/approve-all",{week_start:fmt(ws)},token).then(function(d){
-if(d.error){alert(d.error);return}
-alert(d.count+" постов поставлено в очередь!");
+if(d.error){toast(d.error,"err");return}
+toast(d.count+" постов в очереди","ok");
 loadScheduled();
 });
 }
 
 function runSchedulerNow(){
 apiCall("/api/scheduled/run-now",{},token).then(function(d){
-alert("Scheduler выполнен. Проверь канал.");
+toast("Scheduler выполнен","ok");
 loadScheduled();
 });
 }
@@ -1023,10 +1047,10 @@ var ws=calendarWeekStart;
 var fmt=function(d){var m=d.getMonth()+1;var dd=d.getDate();return d.getFullYear()+"-"+(m<10?"0":"")+m+"-"+(dd<10?"0":"")+dd};
 if(!confirm("Одобрить все черновики с текстом и запустить публикацию?"))return;
 apiCall("/api/scheduled/approve-all",{week_start:fmt(ws)},token).then(function(d){
-if(d.error){alert(d.error);return}
-if(d.count===0){alert("Нет черновиков с текстом для одобрения");return}
+if(d.error){toast(d.error,"err");return}
+if(d.count===0){toast("Нет черновиков с текстом","info");return}
 apiCall("/api/scheduled/run-now",{},token).then(function(){
-alert(d.count+" постов одобрено. Прошедшие по времени — отправлены. Будущие уйдут по расписанию.");
+toast(d.count+" постов одобрено и отправлено","ok");
 loadScheduled();
 });
 });
@@ -1041,7 +1065,7 @@ setHumorLoading(true);
 apiCall("/api/humor-queue/refresh",{},token).then(function(d){
 setHumorLoading(false);
 loadHumorQueue();
-if(d.added===0)alert("Новых мемов не найдено. Попробуй позже.");
+if(d.added===0)toast("Новых мемов не найдено","info");
 }).catch(function(){setHumorLoading(false)});
 }
 function approveHumor(item){
@@ -1062,7 +1086,7 @@ fetch("/api/scheduled/"+sched.id,{method:"PUT",headers:{"Content-Type":"applicat
 
 function openInEditor(sched){
 var rb=null;for(var i=0;i<RUBRICS.length;i++){if(RUBRICS[i].id===sched.rubric)rb=RUBRICS[i]}
-if(!rb){alert("Рубрика не найдена");return}
+if(!rb){toast("Рубрика не найдена","err");return}
 pickRubric(sched.rubric);
 setTimeout(function(){
 // Pre-fill fields from notes/context
@@ -1090,9 +1114,9 @@ function saveDraftToCalendar(){
 if(!pendingDraftId||!text)return;
 var mediaPaths=attachedMediaList&&attachedMediaList.length>0?attachedMediaList.map(function(m){return m.path}).join(","):null;
 apiCall("/api/scheduled/"+pendingDraftId+"/content",{content:text,media_path:mediaPaths,status:"ready"},token).then(function(d){
-if(d.error){alert(d.error);return}
+if(d.error){toast(d.error,"err");return}
 setPendingDraftId(null);
-alert("Сохранено и поставлено в очередь! Scheduler отправит автоматически.");
+toast("Сохранено в очередь","ok");
 });
 }
 
@@ -1104,8 +1128,8 @@ if(!timeStr)return;
 var mediaPaths=attachedMediaList&&attachedMediaList.length>0?attachedMediaList.map(function(m){return m.path}).join(","):null;
 var body={scheduled_date:dateStr,scheduled_time:timeStr,rubric:rub?rub.id:"custom",title:(rub?rub.name:"Пост")+" "+dateStr,notes:"",content:text,media_path:mediaPaths,status:"ready",items:[]};
 fetch("/api/scheduled",{method:"POST",headers:{"Content-Type":"application/json",Authorization:"Bearer "+token},body:JSON.stringify(body)}).then(function(r){return r.json()}).then(function(d){
-if(d.error){alert(d.error);return}
-alert("Запланировано на "+dateStr+" "+timeStr+"! Scheduler отправит автоматически.");
+if(d.error){toast(d.error,"err");return}
+toast("Запланировано на "+dateStr+" "+timeStr,"ok");
 });
 }
 
@@ -1123,8 +1147,8 @@ var el=document.querySelector(".media-attached-bar");
 if(el)el.scrollIntoView({behavior:"smooth",block:"center"});
 },100);
 }
-}else{alert("Ошибка: "+(d.error||"не удалось"))}
-}).catch(function(e){alert("Ошибка: "+e.message)});
+}else{toast(d.error||"Не удалось","err")}
+}).catch(function(e){toast(e.message,"err")});
 }
 
 function suggestImgQuery(){
@@ -1275,6 +1299,7 @@ h("div",{style:{fontSize:10,color:"var(--text-dim)",marginTop:2}},p.platform)
 ):null;
 
 return h("div",{className:"app"},
+h("div",{className:"toast-container"},toasts.map(function(t){return h("div",{key:t.id,className:"toast "+t.type},t.msg)})),
 historyModal,
 statsModal,
 usersOpen?h("div",{className:"modal-backdrop",onClick:function(e){if(e.target===e.currentTarget)setUsersOpen(false)}},
@@ -1458,6 +1483,12 @@ scheduledEdit.content&&scheduledEdit.status!=="ready"&&scheduledEdit.status!=="s
 h("button",{onClick:function(){setScheduledEdit(null)},className:"btn-secondary"},"Отмена")
 )
 ):null,
+scheduled.length===0&&!scheduledEdit?h("div",{style:{padding:24,textAlign:"center",background:"rgba(232,93,31,0.04)",border:"1px dashed var(--accent)",borderRadius:12,marginBottom:16}},
+h("div",{style:{fontSize:28,marginBottom:8}},"\u{1F4C5}"),
+h("div",{style:{fontSize:14,fontWeight:600,marginBottom:4}},"Календарь пуст"),
+h("div",{style:{fontSize:12,color:"var(--text-dim)",marginBottom:12}},"Нажми «План на неделю» чтобы создать черновики на 7 дней"),
+h("button",{onClick:generateWeekPlan,className:"btn-primary accent",style:{padding:"10px 20px",fontSize:13}},"\u{1F4C5} Создать план")
+):null,
 h("div",{style:{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:6},className:"cal-grid-7"},(function(){
 var days=[];
 var start=new Date(calendarWeekStart);
@@ -1492,7 +1523,14 @@ dayPosts.length===0?h("div",{className:"day-header",style:{fontSize:9,color:"var
 ));
 }
 return days;
-})())
+})()),
+h("div",{className:"status-legend"},
+h("div",{className:"status-legend-item"},h("div",{className:"status-legend-dot",style:{background:"var(--line)"}}),"\u270F\uFE0F Черновик"),
+h("div",{className:"status-legend-item"},h("div",{className:"status-legend-dot",style:{background:"rgba(74,222,128,0.5)"}}),"\u23F3 В очереди"),
+h("div",{className:"status-legend-item"},h("div",{className:"status-legend-dot",style:{background:"rgba(74,222,128,0.8)"}}),"\u2705 Отправлен"),
+h("div",{className:"status-legend-item"},h("div",{className:"status-legend-dot",style:{background:"var(--danger)"}}),"\u26A0\uFE0F Ошибка"),
+h("div",{className:"status-legend-item"},h("div",{className:"status-legend-dot",style:{background:"var(--accent)"}}),"\u{1F7E0} Есть текст")
+)
 )
 )
 ):null,
@@ -1826,7 +1864,7 @@ h("div",{style:{display:"flex",gap:8,marginBottom:16}},
 h("input",{id:"humor-url-input",className:"input",placeholder:"URL картинки или видео (правый клик на меме → Копировать адрес изображения)",style:{flex:1}}),
 h("button",{onClick:function(){
 var el=document.getElementById("humor-url-input");var url=el.value.trim();
-if(!url){alert("Вставь URL");return}
+if(!url){toast("Вставь URL картинки","err");return}
 var isVideo=url.match(/\.(mp4|webm|mov)(\?.*)?$/i);
 addAttachedMedia({path:url,preview:url,name:url.split("/").pop()||"meme",type:isVideo?"video":"image"});
 el.value="";
