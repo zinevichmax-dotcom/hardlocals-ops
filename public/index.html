@@ -1017,20 +1017,12 @@ var ctx=canvas.getContext("2d");
 var photo=new Image();
 if(bannerPhoto.indexOf("data:")!==0)photo.crossOrigin="anonymous";
 photo.onload=function(){
-// Draw blurred background - top-biased to keep faces visible
 ctx.filter="blur(12px)";
 var scale=Math.max(1200/photo.width,630/photo.height)*1.1;
 var w=photo.width*scale,hh=photo.height*scale;
-var yPos=Math.min(0,(630-hh)*0.25); // top-biased: show upper part where faces are
+var yPos=Math.min(0,(630-hh)*0.25);
 ctx.drawImage(photo,(1200-w)/2,yPos,w,hh);
 ctx.filter="none";
-// Draw clear photo in center (smaller, with face visible)
-var photoScale=Math.min(1200/photo.width,630/photo.height)*0.85;
-var pw=photo.width*photoScale,ph=photo.height*photoScale;
-ctx.globalAlpha=0.3;
-ctx.drawImage(photo,(1200-pw)/2,(630-ph)*0.35,pw,ph);
-ctx.globalAlpha=1.0;
-// Dark overlay
 ctx.fillStyle="rgba(0,0,0,0.5)";ctx.fillRect(0,0,1200,630);
 ctx.fillStyle="#fff";
 ctx.textAlign="center";ctx.textBaseline="middle";
@@ -2054,7 +2046,26 @@ h("div",{className:"work-inner"},
 // BANNER TOOLS
 h("div",{style:{marginBottom:24}},
 h("div",{style:{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}},
-h("button",{onClick:function(){setBannerOpen(!bannerOpen);setImgSearch(false);setMediaBankOpen(false);if(!bannerOpen&&mediaBank.length===0)loadMediaBank()},className:"tool-btn"},"\u{1F5BC}\uFE0F ",bannerOpen?"Скрыть":"Баннер"),
+h("button",{onClick:function(){setBannerOpen(!bannerOpen);setImgSearch(false);setMediaBankOpen(false);if(!bannerOpen&&mediaBank.length===0)loadMediaBank();
+// Auto-fill banner text based on rubric
+if(!bannerOpen&&rub){
+var autoText="";
+if(rub.id==="birthday"){var n=fields.name||"";autoText="С ДР, "+(n.split("(")[0]||"").trim().toUpperCase()+"!"}
+else if(rub.id==="moto_news")autoText="ДАЙДЖЕСТ МОТОНОВОСТЕЙ";
+else if(rub.id==="trip_announce"){autoText=(fields.route||"ПОЕЗДКА").toUpperCase()}
+else if(rub.id==="route_series")autoText="МАРШРУТ СЕРИИ";
+else if(rub.id==="season_opening")autoText="ОТКРЫТИЕ СЕЗОНА";
+else if(rub.id==="season_calendar")autoText="КАЛЕНДАРЬ СЕЗОНА";
+else if(rub.id==="trip_digest")autoText="ДАЙДЖЕСТ ВЫЕЗДА";
+else if(rub.id==="kind_reminder")autoText="БЕЗОПАСНОСТЬ";
+else if(rub.id==="merch")autoText="МЕРЧ HARD LOCALS";
+else if(rub.id==="values")autoText="ЦЕННОСТИ КЛУБА";
+else if(rub.id==="cross_promo")autoText="НАШИ СОЦСЕТИ";
+else if(rub.id==="riddle")autoText="ЗАГАДКА";
+else if(rub.id==="humor")autoText="";
+if(autoText)setBannerText(autoText);
+}
+},className:"tool-btn"},"\u{1F5BC}\uFE0F ",bannerOpen?"Скрыть":"Баннер"),
 h("button",{onClick:function(){setImgSearch(!imgSearch);setBannerOpen(false);setMediaBankOpen(false);if(!imgSearch&&!imgQuery)suggestImgQuery()},className:"tool-btn"},"\u{1F50D} ",imgSearch?"Скрыть":"Найти фото"),
 h("button",{onClick:function(){toggleMediaBank()},className:"tool-btn",style:mediaBankOpen?{background:"rgba(232,93,31,0.1)",borderColor:"var(--accent)",color:"var(--accent)"}:{}},"\u{1F4F8} Фото клуба"+(mediaBank.length>0?" ("+mediaBank.length+")":"")),
 h("label",{htmlFor:"tools-upload-input",className:"tool-btn",style:{cursor:"pointer"}},"\u{1F4CE} Загрузить",
@@ -2104,7 +2115,12 @@ h("div",{className:"actions"},
 h("button",{onClick:makeBanner,disabled:!bannerPhoto,className:"btn-primary"},banner?"Перегенерировать":"Сгенерировать баннер"),
 banner?h("button",{onClick:attachBanner,className:"btn-primary accent btn-attach-pulse"},"\u{1F4CE} "+(attachedMediaList.length>0?"Добавить в карусель":"Прикрепить к посту")):null
 ),
-banner?h("img",{src:banner,className:"banner-preview"}):null
+banner?h("img",{src:banner,className:"banner-preview"}):null,
+banner?h("div",{style:{display:"flex",gap:6,marginTop:8,alignItems:"center"}},
+h("input",{className:"input",value:bannerText,onChange:function(e){setBannerText(e.target.value)},onKeyDown:function(e){if(e.key==="Enter"){e.preventDefault();makeBanner()}},style:{flex:1,padding:"10px 12px",fontSize:13},placeholder:"Текст на баннере"}),
+h("button",{onClick:makeBanner,className:"btn-primary",style:{padding:"10px 16px",whiteSpace:"nowrap"}},"\u21BB"),
+h("button",{onClick:attachBanner,className:"btn-primary accent",style:{padding:"10px 16px",whiteSpace:"nowrap"}},"\u{1F4CE} К посту")
+):null
 )
 ):null,
 // IMAGE SEARCH PANEL
