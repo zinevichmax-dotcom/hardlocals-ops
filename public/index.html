@@ -32,7 +32,7 @@ a{color:inherit;text-decoration:none}
 .app{min-height:100vh;display:flex;flex-direction:column}
 .header{padding:18px 32px;border-bottom:1px solid var(--line-soft);display:flex;align-items:center;justify-content:space-between;background:rgba(14,14,16,0.85);backdrop-filter:blur(20px);position:sticky;top:0;z-index:50}
 .header-left{display:flex;align-items:center;gap:20px}
-.menu-btn{width:32px;height:32px;border-radius:8px;display:flex;align-items:center;justify-content:center;color:var(--text-muted);transition:all 0.2s;font-size:16px}
+.menu-btn{width:32px;height:32px;border-radius:8px;display:none;align-items:center;justify-content:center;color:var(--text-muted);transition:all 0.2s;font-size:16px}
 .menu-btn:hover{background:var(--bg-hover);color:var(--text)}
 .brand{display:flex;align-items:baseline;gap:14px}
 .brand-name{font-family:'Unbounded',sans-serif;font-size:15px;font-weight:800;letter-spacing:0.01em}
@@ -214,6 +214,65 @@ a{color:inherit;text-decoration:none}
 .history-meta{display:flex;align-items:center;gap:10px;margin-bottom:8px;flex-wrap:wrap}
 .platform-chip{padding:3px 8px;border-radius:4px;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em}
 .history-text{font-size:12px;color:var(--text-muted);line-height:1.6;max-height:100px;overflow:hidden;white-space:pre-wrap}
+
+/* ═══════ MOBILE RESPONSIVE ═══════ */
+@media(max-width:768px){
+  .header{padding:10px 14px}
+  .header h1{font-size:14px!important}
+  .header-right{gap:6px}
+  .header-btn{padding:6px 10px;font-size:10px}
+  .status-pill{display:none}
+  .menu-btn{display:flex!important;font-size:20px;padding:8px 12px;background:transparent;border:1px solid var(--line-soft);border-radius:8px;color:var(--text)}
+  
+  .body{flex-direction:column}
+  .sidebar{position:fixed;top:0;left:0;width:85vw;max-width:320px;height:100vh;z-index:200;transform:translateX(-100%);transition:transform 0.3s ease;box-shadow:20px 0 60px rgba(0,0,0,0.5);background:var(--bg)!important;padding-top:20px}
+  .sidebar.open{transform:translateX(0)}
+  .sidebar-backdrop{position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.5);z-index:199;display:none}
+  .sidebar-backdrop.open{display:block}
+  
+  .work{padding:16px 14px 100px!important}
+  .work-inner{max-width:100%!important}
+  .rubric-header{padding:16px 14px 14px!important;flex-direction:column;gap:10px}
+  .rubric-title-text{font-size:16px!important}
+  .rubric-title-icon{width:36px;height:36px;font-size:16px}
+  
+  .field{margin-bottom:14px}
+  .input,.textarea{padding:14px 12px;font-size:14px}
+  .btn-primary{padding:14px 20px;font-size:14px;width:100%}
+  .btn-secondary,.btn-ghost{padding:12px 16px;font-size:12px}
+  .actions{flex-direction:column}
+  .actions .btn-primary,.actions .btn-secondary{width:100%}
+  
+  .tool-btn{padding:12px 14px;font-size:12px}
+  .post-row{padding:14px;flex-direction:column}
+  .post-btn{width:100%;justify-content:center;padding:14px;font-size:14px}
+  .copy-row{padding:10px 14px}
+  .copy-btn{flex:1;text-align:center;padding:10px}
+  
+  .result-card{margin-top:16px;border-radius:10px}
+  .result-head{padding:12px 14px}
+  .result-body{padding:14px}
+  .result-textarea{font-size:14px;min-height:120px}
+  .preview{padding:14px}
+  
+  .modal{width:100vw!important;max-width:100vw!important;height:100vh;max-height:100vh;border-radius:0!important;margin:0}
+  .modal-head{padding:14px 16px;flex-wrap:wrap;gap:8px}
+  .modal-title{font-size:16px!important}
+  .modal-body{padding:12px}
+  .modal-backdrop{padding:0!important;align-items:stretch}
+  
+  .media-thumb-wrap{width:56px;height:56px}
+  .media-add-btn{width:56px;height:56px}
+}
+
+/* Calendar mobile */
+@media(max-width:900px){
+  .cal-grid-7{grid-template-columns:1fr 1fr!important}
+}
+@media(max-width:500px){
+  .cal-grid-7{grid-template-columns:1fr!important}
+  .dash-2col{grid-template-columns:1fr!important}
+}
 </style>
 </head>
 <body>
@@ -229,7 +288,7 @@ var RUBRICS=[
 {id:"trip_announce",name:"Анонс поездки",icon:"\u{1F6E3}",freq:"по мере",desc:"Анонс маршрута",fields:[{k:"route_name",l:"Маршрут",ph:"Санкт-Петербург"},{k:"date",l:"Даты",ph:"12-14 июня"},{k:"distance",l:"Км",ph:"700"},{k:"details",l:"Детали",ph:"Набережные, мосты...",ml:true}],pr:function(f){return "Пост-анонс. "+(f.route_name||"Санкт-Петербург")+". "+(f.date||"12-14 июня")+". "+(f.distance||"700")+" км. "+(f.details||"Набережные, мосты, залив.")+" Крючок, атмосфера, практика, призыв.";}},
 {id:"season_opening",name:"Открытие сезона",icon:"\u26A1",freq:"до 23 мая",desc:"23 мая",fields:[{k:"days_left",l:"Дней до",ph:"14"},{k:"extra",l:"Детали",ph:"Диджей, бар...",ml:true}],pr:function(f){return "Напоминание на открытие сезона 23 мая. "+(f.days_left?"Осталось "+f.days_left+" дней. ":"")+"OpenAir Москва. "+(f.extra||"");}},
 {id:"kind_reminder",name:"Kind Reminder",icon:"\u{1F6E1}",freq:"1/нед",desc:"Безопасность",fields:[{k:"topic",l:"Тема",ph:"Межрядье / защита..."}],pr:function(f){return "Короткий пост о безопасности. "+(f.topic?"Тема: "+f.topic:"Тема на выбор.")+" Макс 500 символов.";}},
-{id:"merch",name:"Мерч",icon:"\u{1F9E2}",freq:"1/нед",desc:"Мерч",fields:[{k:"item",l:"Товар (или пусто = рандом)",ph:"Бейсболка / худи / всё"},{k:"promo",l:"Повод",ph:"Сезон / скидка / новинка"}],pr:function(f){var catalog="Каталог:\n• Бейсболка с сеткой — 4500₽ (было 5000)\n• Худи ездовая — 7500₽ (было 8500)\n• Худи тонкая — 6000₽ (было 6500)\n• Футболка чёрная — 4000₽ (было 4500)\n• Свитшот — 5000₽ (было 5500)\n• Лонгслив — 5000₽ (было 5500)\n• Футболка белая — 4000₽\n• Бафф — 1500₽ (было 1800)\n• Рамка мото — 600₽\n• Рамка авто — 1200₽ (2шт)\n• Джерси ездовая — 4000₽\n• Шапка для бани — 1000₽\n• Стикеры — 400₽\n• Шапка — 3500₽";return "Пост про мерч Hard Locals. "+(f.item?"Фокус: "+f.item+".":"Выбери 2-3 товара из каталога.")+" "+(f.promo?"Повод: "+f.promo+".":"")+"\n"+catalog+"\n\nЗаказ: https://t.me/casual_pumpkin\nКаталог: https://hardlocals.club/shop#order\nСтиль — не про понты, а про своих.";}},
+{id:"merch",name:"Мерч",icon:"\u{1F9E2}",freq:"1/нед",desc:"Мерч",fields:[{k:"item",l:"Товар (или пусто = рандом)",ph:"Бейсболка / худи / всё"},{k:"promo",l:"Повод",ph:"Сезон / скидка / новинка"}],pr:function(f){var catalog="Каталог Hard Locals:\n• Бейсболка с сеткой — 4500₽ (<s>5000₽</s>)\n• Худи ездовая — 7500₽ (<s>8500₽</s>). Плотная, не продувается\n• Худи тонкая — 6000₽ (<s>6500₽</s>). Для летних вечеров\n• Футболка чёрная — 4000₽ (<s>4500₽</s>). Хлопок, лого на груди и спине\n• Свитшот — 5000₽ (<s>5500₽</s>). Лого на грудь и рукава\n• Лонгслив — 5000₽ (<s>5500₽</s>). Лого во всю спину\n• Футболка белая — 4000₽ (<s>4500₽</s>)\n• Бафф — 1500₽ (<s>1800₽</s>)\n• Рамка мото — 600₽\n• Рамка авто — 1200₽ (2шт)\n• Джерси ездовая — 4000₽\n• Шапка для бани — 1000₽\n• Стикеры — 400₽\n• Шапка — 3500₽";return "Пост про мерч Hard Locals. "+(f.item?"Фокус: "+f.item+".":"Выбери 2-3 товара.")+" "+(f.promo?"Повод: "+f.promo+".":"")+"\n"+catalog+"\n\nФормат:\n1. <b>Заголовок</b>\n2. Каждый товар: <b>название</b> — цена. Если скидка: <s>старая</s> новая. Описание 1 фраза\n3. Ссылки:\n<a href='https://hardlocals.club/shop#order'>Смотреть каталог</a>\n<a href='https://t.me/casual_pumpkin'>Заказать</a>\n\nСтиль — не про понты, а про своих.";}},
 {id:"trip_digest",name:"Дайджест выезда",icon:"\u{1F4F8}",freq:"после выезда",desc:"Отчёт",fields:[{k:"route",l:"Маршрут",ph:"Оптина Пустынь"},{k:"highlights",l:"Моменты",ph:"Дорога, стоянки...",ml:true}],pr:function(f){return "Дайджест поездки. "+(f.route||"Оптина Пустынь")+". "+(f.highlights||"260 км. Калуга. Монастырь, тишина.");}},
 {id:"moto_news",name:"Мотоновости",icon:"\u{1F4F0}",freq:"1/нед",desc:"Дайджест с гиперссылками",ws:true,fields:[{k:"news",l:"Свои новости (необязательно)",ph:"Оставь пустым и AI найдёт сам",ml:true}],pr:function(f){return "Дайджест мотоновостей недели. "+(f.news?"Новости:\n"+f.news:"Найди через web_search 5 мотоновостей за последние 7 дней.")+" HTML формат. МАКС 900 символов (caption Telegram).\n\nСтруктура:\n<b>\u{1F4F0} Дайджест мотоновостей недели</b>\n\n\u{1F4CE} <b>Заголовок</b>\nКраткий текст с гиперссылкой на источник в глаголе: <a href='URL'>представила</a>.\n\nКАЖДАЯ новость ОБЯЗАТЕЛЬНО имеет гиперссылку на реальный URL из web_search. Ссылки ТОЛЬКО на первоисточники (motogonki.ru, 110km.ru, rbc.ru, motor.ru). ЗАПРЕЩЕНО ссылаться на t.me/hardlocals, hardlocals.club.\n\nЗаголовки БЕЗ точки. Тело ОБЯЗАТЕЛЬНО с точкой.\n\nВ конце: Все новости в <a href='https://t.me/hardlocals'>канале</a>";}},
 {id:"cross_promo",name:"Кросс-промо",icon:"\u{1F4F1}",freq:"1-2/нед",desc:"Соцсети",fields:[],pr:function(){return "Короткий пост о соцсетях Hard Locals.";}},
@@ -616,7 +675,7 @@ if(r.token){localStorage.setItem("token",r.token);setToken(r.token);setAuthed(tr
 setLoginB(false);
 }).catch(function(e){setLoginE(String(e.message||e));setLoginB(false)})}
 
-function pickRubric(id){setSel(id);setFields({});setText("");setError("");setPostMsg("");setBlocks(null);setBanner(null);setBannerOpen(false);setImgSearch(false);setAttachedMediaList([]);setPendingDraftId(null);loadTemplates(id)}
+function pickRubric(id){setSel(id);setFields({});setText("");setError("");setPostMsg("");setBlocks(null);setBanner(null);setBannerOpen(false);setImgSearch(false);setAttachedMediaList([]);setPendingDraftId(null);loadTemplates(id);if(window.innerWidth<768)setSidebar(false)}
 
 function loadTemplates(rubric){
 fetch("/api/templates?rubric="+encodeURIComponent(rubric),{headers:{Authorization:"Bearer "+token}}).then(function(r){return r.json()}).then(function(d){setTemplates(Array.isArray(d)?d:[])}).catch(function(){setTemplates([])});
@@ -1299,7 +1358,7 @@ scheduledEdit.content&&scheduledEdit.status!=="ready"&&scheduledEdit.status!=="s
 h("button",{onClick:function(){setScheduledEdit(null)},className:"btn-secondary"},"Отмена")
 )
 ):null,
-h("div",{style:{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:6}},(function(){
+h("div",{style:{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:6},className:"cal-grid-7"},(function(){
 var days=[];
 var start=new Date(calendarWeekStart);
 var todayStr=fmtYMD(new Date());
@@ -1417,7 +1476,8 @@ h("button",{onClick:logout,className:"header-btn"},"Выйти")
 )
 ),
 h("div",{className:"body"},
-sidebar?h("div",{className:"sidebar"},
+sidebar?h("div",{className:"sidebar-backdrop"+(sidebar?" open":""),onClick:function(){setSidebar(false)}}):null,
+sidebar?h("div",{className:"sidebar"+(sidebar?" open":"")},
 GROUPS.map(function(g,gi){return h("div",{key:gi,className:"sidebar-group"},
 g.l?h("div",{className:"sidebar-group-label"},g.l):null,
 g.ids.map(function(id){var r=null;for(var i=0;i<RUBRICS.length;i++){if(RUBRICS[i].id===id)r=RUBRICS[i]}if(!r)return null;var active=sel===id;
@@ -1458,7 +1518,7 @@ h("button",{onClick:function(){pickRubric("birthday");setTimeout(function(){useM
 }))
 ),
 // QUEUE STATUS + NEXT ROUTE
-h("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16,marginBottom:16}},
+h("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16,marginBottom:16},className:"dash-2col"},
 // Queue status
 h("div",{style:{background:"var(--bg-card)",border:"1px solid var(--line-soft)",borderRadius:14,padding:24}},
 h("div",{style:{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16}},

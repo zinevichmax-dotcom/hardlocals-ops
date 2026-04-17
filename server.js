@@ -1360,8 +1360,8 @@ app.post('/api/scheduled/batch-generate', auth, async (req, res) => {
           break;
         case 'merch': {
           const items = getRandomShopItems(3);
-          const itemsStr = items.map(it => `${it.name} — ${it.price}₽${it.sale ? ' (было ' + it.oldPrice + '₽)' : ''}${it.desc ? '. ' + it.desc : ''}`).join('\n');
-          prompt = `Пост про мерч Hard Locals. Покажи 2-3 конкретных товара:\n${itemsStr}\n\nЗаказ: https://t.me/casual_pumpkin\nКаталог: https://hardlocals.club/shop#order\n\n3-4 предложения. Стиль — не про понты, а про своих. Сезон начинается. Вставь ссылку на заказ.`;
+          const itemsStr = items.map(it => `• ${it.name} — ${it.price}₽${it.sale && it.oldPrice ? ' (старая цена ' + it.oldPrice + '₽, используй <s>' + it.oldPrice + '₽</s> в посте)' : ''}${it.desc ? '. ' + it.desc : ''}`).join('\n');
+          prompt = `Пост про мерч Hard Locals. Продвигай конкретные товары:\n${itemsStr}\n\nТребования к формату:\n1. Заголовок жирный через <b>\n2. Каждый товар на отдельной строке: <b>название</b> — цена. Если есть скидка, зачеркни старую цену через <s>старая</s> и рядом новую\n3. Краткое описание товара (1 фраза)\n4. Финал: две ссылки\n   - Каталог: <a href="https://hardlocals.club/shop#order">Смотреть каталог</a>\n   - Заказ: <a href="https://t.me/casual_pumpkin">Заказать в Telegram</a>\n\nСтиль: не про понты, а про своих. Коротко. 5-7 строк макс.`;
           break;
         }
         case 'values':
@@ -1547,7 +1547,7 @@ app.get('*', (req, res) => {
 });
 
 app.listen(PORT, '0.0.0.0', () => {
-  console.log(`\n  Hard Locals Content Ops v9.4 (fix all UTC→local timezone bugs)`);
+  console.log(`\n  Hard Locals Content Ops v9.6 (mobile responsive + shop catalog)`);
   console.log(`  → http://0.0.0.0:${PORT}`);
   console.log(`  → Anthropic: ${ANTHROPIC_API_KEY ? '✓' : '✗'}`);
   console.log(`  → TG Bot: ${TG_BOT_TOKEN ? '✓' : '✗'}`);
