@@ -1994,6 +1994,57 @@ app.post('/api/media-bank/refresh', auth, async (req, res) => {
   res.json({ ok: true, added });
 });
 
+// ═══════ BIRTHDAY AUTO-CREATE ═══════
+app.post('/api/scheduled/create-birthday', auth, async (req, res) => {
+  const { member_id, scheduled_date, scheduled_time } = req.body;
+  const member = db.prepare('SELECT * FROM members WHERE id = ?').get(member_id);
+  if (!member) return res.status(404).json({ error: 'Member not found' });
+
+  const name = member.name + (member.nickname ? ' (' + member.nickname + ')' : '');
+  const facts = [member.bike, member.notes].filter(Boolean).join('. ');
+
+  // Generate birthday text via Claude
+  let content = '';
+  try {
+    const prompt = `Пост-поздравление с днём рождения для участника мотоклуба Hard Locals.\nИмя: ${name}\n${facts ? 'Факты: ' + facts : ''}\n\nКороткий, тёплый, мужской. 3-5 строк. Без пафоса. Как поздравил бы друга. Упомяни мотоциклы/дорогу. HTML для Telegram.`;
+    const apiRes = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-api-key': ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01' },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 400,
+        system: 'Ты копирайтер мотоклуба Hard Locals. Тон: тёплый, мужской, прямой. На ты. Макс 2 эмодзи. HTML для Telegram. ОДИН пост. Сразу текст.',
+        messages: [{ role: 'user', content: prompt }],
+      }),
+    });
+    const data = await apiRes.json();
+    if (data.content) { for (const c of data.content) { if (c.type === 'text') content += c.text; } }
+    content = content.trim();
+  } catch (e) {
+    console.error('[BIRTHDAY] Generate error:', e.message);
+    content = `<b>${member.nickname || member.name}, с днём рождения!</b>\n\nЧтобы дорога всегда была ровной, ветер — попутным, а бак — полным. Хорошего сезона! 🏍`;
+  }
+
+  // Smart time: if birthday is today and time already passed, use next hour
+  const now = new Date();
+  const todayStr = fmtLocal(now);
+  let finalDate = scheduled_date || todayStr;
+  let finalTime = scheduled_time || '09:00';
+  if (finalDate === todayStr) {
+    const nextHour = now.getHours() + 1;
+    if (nextHour < 22) {
+      finalTime = String(nextHour).padStart(2, '0') + ':00';
+    }
+  }
+
+  const title = 'ДР: ' + (member.nickname || member.name);
+  const r = db.prepare('INSERT INTO scheduled (scheduled_date, scheduled_time, rubric, title, notes, content, media_path, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
+    .run(finalDate, finalTime, 'birthday', title, '', content, member.photo_path || null, 'ready');
+
+  console.log(`[BIRTHDAY] Created post for ${name} at ${finalDate} ${finalTime}`);
+  res.json({ ok: true, id: r.lastInsertRowid, time: finalTime, content });
+});
+
 // ═══════ HISTORY ═══════
 app.get('/api/posts', auth, (req, res) => {
   const posts = db.prepare('SELECT * FROM posts ORDER BY created_at DESC LIMIT 100').all();
@@ -2066,7 +2117,7 @@ app.get('*', (req, res) => {
 });
 
 app.listen(PORT, '0.0.0.0', () => {
-  console.log(`\n  Hard Locals Content Ops v12.9 (fix birthday flow + PUT preserve + banner grid)`);
+  console.log(`\n  Hard Locals Content Ops v13.0 (auto birthday: text + photo + smart time)`);
   console.log(`  → http://0.0.0.0:${PORT}`);
   console.log(`  → Anthropic: ${ANTHROPIC_API_KEY ? '✓' : '✗'}`);
   console.log(`  → TG Bot: ${TG_BOT_TOKEN ? '✓' : '✗'}`);

@@ -1813,18 +1813,13 @@ h("div",{style:{fontSize:13,fontWeight:600,marginBottom:2}},m.name,m.nickname?h(
 h("div",{style:{fontSize:10,color:today?"var(--accent)":"var(--text-muted)",fontWeight:today?700:400}},today?"\u{1F382} СЕГОДНЯ!":"\u{1F382} через "+days+" дн.")
 ),
 h("button",{onClick:function(){
-// Create birthday post directly in calendar
+toast("Создаю пост для "+(m.nickname||m.name)+"...","info");
 var bday=m.birthday;
 var thisYear=new Date().getFullYear();
 var bdayDate=thisYear+"-"+bday.slice(5);
-var photoPath=m.photo_path||null;
-var title="ДР: "+(m.nickname||m.name);
-fetch("/api/scheduled",{method:"POST",headers:{"Content-Type":"application/json",Authorization:"Bearer "+token},body:JSON.stringify({
-scheduled_date:bdayDate,scheduled_time:"09:00",rubric:"birthday",title:title,
-content:"",media_path:photoPath,status:"draft",notes:"auto-birthday"
-})}).then(function(r){return r.json()}).then(function(d){
+apiCall("/api/scheduled/create-birthday",{member_id:m.id,scheduled_date:bdayDate},token).then(function(d){
 if(d.error){toast(d.error,"err");return}
-toast(title+" добавлен на "+bdayDate,"ok");
+toast("ДР: "+(m.nickname||m.name)+" → "+bdayDate+" "+d.time,"ok");
 loadScheduled();
 });
 },className:"btn-ghost",style:{padding:"5px 10px",fontSize:10,color:"var(--accent)",flexShrink:0}},"\u{1F4C5} В план")
