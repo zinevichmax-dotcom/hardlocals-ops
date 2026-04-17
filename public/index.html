@@ -394,6 +394,7 @@ var userRoleS=useS("editor");
 var usersListS=useS([]);
 var usersOpenS=useS(false);
 var toastsS=useS([]);
+var historyFilterS=useS("");
 var selS=useS(null);
 var fieldsS=useS({});
 var textS=useS("");
@@ -459,6 +460,7 @@ var userRole=userRoleS[0],setUserRole=userRoleS[1];
 var usersList=usersListS[0],setUsersList=usersListS[1];
 var usersOpen=usersOpenS[0],setUsersOpen=usersOpenS[1];
 var toasts=toastsS[0],setToasts=toastsS[1];
+var historyFilter=historyFilterS[0],setHistoryFilter=historyFilterS[1];
 
 function toast(msg,type){
 var id=Date.now()+Math.random();
@@ -1203,21 +1205,33 @@ h("div",null,h("div",{className:"modal-title"},"История публикац�
 h("button",{onClick:function(){setHistoryOpen(false)},className:"btn-ghost"},"Закрыть")
 ),
 h("div",{className:"modal-body"},
+h("div",{style:{marginBottom:12,display:"flex",gap:8}},
+h("input",{className:"input",placeholder:"\u{1F50D} Поиск по тексту или рубрике...",value:historyFilter,onChange:function(e){setHistoryFilter(e.target.value)},style:{flex:1}}),
+historyFilter?h("button",{onClick:function(){setHistoryFilter("")},className:"btn-ghost",style:{padding:"10px 14px"}},"\u2715"):null
+),
 historyLoading?h("div",{style:{textAlign:"center",color:"var(--text-dim)",padding:40,fontSize:12}},"Загрузка..."):
-historyList.length===0?h("div",{style:{textAlign:"center",color:"var(--text-dim)",padding:40,fontSize:12}},"Пока нет отправленных постов"):
-historyList.map(function(post){
+(function(){
+var filtered=historyList;
+if(historyFilter){
+var q=historyFilter.toLowerCase();
+filtered=historyList.filter(function(p){return(p.content||"").toLowerCase().indexOf(q)>=0||(p.rubric||"").toLowerCase().indexOf(q)>=0||(p.platform||"").toLowerCase().indexOf(q)>=0});
+}
+return filtered.length===0?h("div",{style:{textAlign:"center",color:"var(--text-dim)",padding:40,fontSize:12}},historyFilter?"Ничего не найдено по «"+historyFilter+"»":"Пока нет отправленных постов"):
+filtered.map(function(post){
 var pcolor=post.platform==="telegram"?"#2AABEE":post.platform==="vk"?"#0077FF":"#666";
 return h("div",{key:post.id,className:"history-item"},
 h("div",{className:"history-meta"},
 h("span",{className:"platform-chip",style:{color:pcolor,background:pcolor+"22"}},post.platform||"?"),
 h("span",{style:{fontSize:11,color:"var(--text-muted)"}},rubricName(post.rubric)),
+post.media_path?h("span",{style:{fontSize:10,color:"var(--text-dim)"}},"\u{1F4CE}"):null,
 h("span",{style:{fontSize:10,color:"var(--text-dim)",marginLeft:"auto"}},formatDate(post.created_at)),
 h("button",{onClick:function(){copyHistory(post.content)},className:"btn-ghost",style:{padding:"4px 10px",fontSize:10}},"Копировать"),
 h("button",{onClick:function(){useAsTemplate(post.content)},className:"btn-ghost",style:{padding:"4px 10px",fontSize:10,color:"var(--success)"}},"В редактор")
 ),
-h("div",{className:"history-text"},(post.content||"").slice(0,400)+(post.content&&post.content.length>400?"...":""))
+h("div",{className:"history-text"},(post.content||"").replace(/<[^>]*>/g,"").slice(0,300)+(post.content&&post.content.length>300?"...":""))
 );
-})
+});
+})()
 )
 )
 ):null;
@@ -1712,7 +1726,28 @@ h("div",{style:{fontSize:11,color:"var(--text-dim)"}},"дней\nосталос�
 })()
 )
 ),
-// QUICK ACTIONS
+// RECENT POSTS
+(function(){
+var sent=scheduled.filter(function(s){return s.status==="sent"}).sort(function(a,b){return(b.scheduled_date+b.scheduled_time).localeCompare(a.scheduled_date+a.scheduled_time)}).slice(0,3);
+return sent.length>0?h("div",{style:{background:"var(--bg-card)",border:"1px solid var(--line-soft)",borderRadius:14,padding:24,marginBottom:16}},
+h("div",{style:{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:14}},
+h("div",{style:{fontFamily:"var(--f-head)",fontSize:14,fontWeight:700}},"\u2705 Опубликовано"),
+h("button",{onClick:function(){openHistory();if(window.innerWidth<768)setSidebar(false)},className:"btn-ghost"},"Вся история \u2192")
+),
+h("div",{style:{display:"flex",flexDirection:"column",gap:8}},sent.map(function(p){
+var rb=null;for(var j=0;j<RUBRICS.length;j++){if(RUBRICS[j].id===p.rubric)rb=RUBRICS[j]}
+return h("div",{key:p.id,style:{padding:10,background:"var(--bg-elev)",border:"1px solid var(--line-soft)",borderRadius:8,display:"flex",alignItems:"center",gap:10}},
+h("span",{style:{fontSize:16}},rb?rb.icon:"\u{1F4CC}"),
+h("div",{style:{flex:1,minWidth:0}},
+h("div",{style:{fontSize:12,fontWeight:600,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}},p.title||(rb?rb.name:p.rubric)),
+h("div",{style:{fontSize:10,color:"var(--text-dim)"}},p.scheduled_date+" "+p.scheduled_time)
+),
+p.content?h("div",{style:{fontSize:10,color:"var(--text-dim)",maxWidth:200,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}},(p.content||"").replace(/<[^>]*>/g,"").slice(0,60)):null
+);
+}))
+):null;
+})(),
+// QUICK START
 h("div",{style:{background:"var(--bg-card)",border:"1px solid var(--line-soft)",borderRadius:14,padding:24,marginBottom:16}},
 h("div",{style:{fontFamily:"'Unbounded',sans-serif",fontSize:14,fontWeight:700,marginBottom:16}},"Быстрый старт"),
 h("div",{style:{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(180px,1fr))",gap:10}},
