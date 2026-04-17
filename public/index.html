@@ -241,6 +241,17 @@ a{color:inherit;text-decoration:none}
 .status-legend-item{display:flex;align-items:center;gap:5px;font-size:10px;color:var(--text-dim)}
 .status-legend-dot{width:8px;height:8px;border-radius:2px}
 
+/* HOVER PREVIEW */
+.cal-preview{position:fixed;z-index:300;width:340px;max-height:420px;background:var(--bg-card);border:1px solid var(--line);border-radius:12px;box-shadow:0 20px 60px rgba(0,0,0,0.6);overflow:hidden;pointer-events:auto;animation:previewIn 0.15s ease}
+@keyframes previewIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
+.cal-preview-media{width:100%;max-height:160px;object-fit:cover;display:block}
+.cal-preview-body{padding:12px 14px}
+.cal-preview-text{font-size:12px;line-height:1.5;color:var(--text);max-height:140px;overflow-y:auto;white-space:pre-wrap;margin-bottom:8px}
+.cal-preview-meta{font-size:10px;color:var(--text-dim);display:flex;gap:8px;align-items:center;margin-bottom:8px}
+.cal-preview-actions{display:flex;gap:6px;border-top:1px solid var(--line-soft);padding:8px 14px}
+.cal-preview-btn{flex:1;padding:6px;border:1px solid var(--line-soft);border-radius:6px;font-size:10px;font-weight:600;text-align:center;cursor:pointer;transition:all 0.15s;background:transparent;color:var(--text-muted)}
+.cal-preview-btn:hover{background:var(--bg-hover);color:var(--text)}
+
 /* ═══════ MOBILE RESPONSIVE ═══════ */
 @media(max-width:768px){
   .header{padding:10px 14px}
@@ -291,6 +302,7 @@ a{color:inherit;text-decoration:none}
   .media-add-btn{width:56px;height:56px}
   .toast-container{bottom:16px;right:16px;left:16px}
   .toast{max-width:100%}
+  .cal-preview{display:none!important}
 }
 
 /* Calendar mobile */
@@ -486,6 +498,9 @@ var mediaBankLoadingS=useS(false);
 var mediaBank=mediaBankS[0],setMediaBank=mediaBankS[1];
 var mediaBankOpen=mediaBankOpenS[0],setMediaBankOpen=mediaBankOpenS[1];
 var mediaBankLoading=mediaBankLoadingS[0],setMediaBankLoading=mediaBankLoadingS[1];
+var hoverPreviewS=useS(null);
+var hoverPreview=hoverPreviewS[0],setHoverPreview=hoverPreviewS[1];
+var hoverTimerRef=useR(null);
 
 function toast(msg,type){
 var id=Date.now()+Math.random();
@@ -564,6 +579,8 @@ var rssLoading=rssLoadingS[0],setRssLoading=rssLoadingS[1];
 var calendarOpen=calendarOpenS[0],setCalendarOpen=calendarOpenS[1];
 var scheduled=scheduledS[0],setScheduled=scheduledS[1];
 var scheduledEdit=scheduledEditS[0],setScheduledEdit=scheduledEditS[1];
+var previewPostS=useS(null);
+var previewPost=previewPostS[0],setPreviewPost=previewPostS[1];
 var calendarWeekStart=calendarWeekStartS[0],setCalendarWeekStart=calendarWeekStartS[1];
 var digestPicker=digestPickerS[0],setDigestPicker=digestPickerS[1];
 var singleNews=singleNewsS[0],setSingleNews=singleNewsS[1];
@@ -672,7 +689,7 @@ var fmt=function(d){var m=d.getMonth()+1;var dd=d.getDate();return d.getFullYear
 fetch("/api/scheduled?from="+fmt(start)+"&to="+fmt(end),{headers:{Authorization:"Bearer "+token}}).then(function(r){return r.json()}).then(function(d){setScheduled(Array.isArray(d)?d:[])});
 }
 
-function openCalendar(){setCalendarOpen(true);setScheduledEdit(null);loadScheduled()}
+function openCalendar(){setCalendarOpen(true);setScheduledEdit(null);setPreviewPost(null);loadScheduled()}
 
 function saveScheduled(item){
 var url=item.id?"/api/scheduled/"+item.id:"/api/scheduled";
@@ -1681,7 +1698,10 @@ var statusColors={draft:"var(--line)",ready:"rgba(74,222,128,0.5)",sent:"rgba(74
 var statusIcons={draft:"\u270F",ready:"\u23F3",sent:"\u2705",sending:"\u{1F504}",error:"\u26A0"};
 var st=p.status||"planned";
 var rubColor=RUBRIC_COLORS[p.rubric]||"var(--line-soft)";
-return h("div",{key:p.id,draggable:st!=="sent",onDragStart:function(ev){ev.dataTransfer.setData("text/plain",String(p.id))},style:{background:st==="sent"?"rgba(0,0,0,0.15)":"var(--bg-card)",borderLeft:"3px solid "+rubColor,borderRadius:5,padding:"4px 6px",fontSize:10,cursor:st!=="sent"?"grab":"pointer",display:"flex",alignItems:"center",gap:4},title:p.content?(p.content.replace(/<[^>]*>/g,"").slice(0,120)+"..."):(st==="draft"?"Нет текста — сгенерируй":""),onClick:function(e){e.stopPropagation();setScheduledEdit(p)}},
+return h("div",{key:p.id,draggable:st!=="sent",onDragStart:function(ev){ev.dataTransfer.setData("text/plain",String(p.id))},
+onMouseEnter:function(ev){if(!p.content)return;var rect=ev.currentTarget.getBoundingClientRect();clearTimeout(hoverTimerRef.current);hoverTimerRef.current=setTimeout(function(){var x=rect.right+8;var y=rect.top;if(x+350>window.innerWidth)x=rect.left-350;if(y+400>window.innerHeight)y=window.innerHeight-420;setHoverPreview({post:p,rubric:r,x:x,y:Math.max(10,y)})},250)},
+onMouseLeave:function(){clearTimeout(hoverTimerRef.current);hoverTimerRef.current=setTimeout(function(){setHoverPreview(null)},200)},
+style:{background:st==="sent"?"rgba(0,0,0,0.15)":"var(--bg-card)",borderLeft:"3px solid "+rubColor,borderRadius:5,padding:"4px 6px",fontSize:10,cursor:st!=="sent"?"grab":"pointer",display:"flex",alignItems:"center",gap:4},onClick:function(e){e.stopPropagation();setPreviewPost(previewPost&&previewPost.id===p.id?null:p)}},
 h("span",{title:st},statusIcons[st]||""),
 h("span",null,r?r.icon:""),
 h("span",{style:{flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",color:st==="sent"?"var(--text-dim)":"var(--text)"}},p.scheduled_time?(p.scheduled_time+" "):"",p.title||(r?r.name:p.rubric)),
@@ -1702,7 +1722,65 @@ h("div",{className:"status-legend-item"},h("div",{className:"status-legend-dot",
 h("div",{className:"status-legend-item"},h("div",{className:"status-legend-dot",style:{background:"rgba(74,222,128,0.8)"}}),"\u2705 Отправлен"),
 h("div",{className:"status-legend-item"},h("div",{className:"status-legend-dot",style:{background:"var(--danger)"}}),"\u26A0\uFE0F Ошибка"),
 h("div",{className:"status-legend-item"},h("div",{className:"status-legend-dot",style:{background:"var(--accent)"}}),"\u{1F7E0} Есть текст")
+),
+// QUICK PREVIEW
+previewPost?h("div",{style:{marginTop:12,background:"linear-gradient(180deg,var(--bg-card) 0%,var(--bg-elev) 100%)",border:"1px solid var(--line)",borderRadius:14,overflow:"hidden",animation:"toastIn 0.2s ease"}},
+h("div",{style:{padding:"12px 16px",borderBottom:"1px solid var(--line-soft)",display:"flex",alignItems:"center",justifyContent:"space-between"}},
+h("div",{style:{display:"flex",alignItems:"center",gap:8}},
+(function(){var rb=null;for(var j=0;j<RUBRICS.length;j++){if(RUBRICS[j].id===previewPost.rubric)rb=RUBRICS[j]}return rb?h("span",{style:{fontSize:16}},rb.icon):null})(),
+h("span",{style:{fontSize:13,fontWeight:600}},previewPost.title||(function(){var rb=null;for(var j=0;j<RUBRICS.length;j++){if(RUBRICS[j].id===previewPost.rubric)rb=RUBRICS[j]}return rb?rb.name:previewPost.rubric})()),
+h("span",{style:{fontSize:10,color:"var(--text-dim)",marginLeft:8}},previewPost.scheduled_date+" "+previewPost.scheduled_time)
+),
+h("div",{style:{display:"flex",gap:6}},
+previewPost.status==="draft"&&previewPost.content?h("button",{onClick:function(){approvePost(previewPost);setPreviewPost(null)},className:"btn-ghost",style:{padding:"5px 10px",fontSize:10,color:"#4ade80",borderColor:"rgba(74,222,128,0.3)"}},"\u2705 Одобрить"):null,
+h("button",{onClick:function(){setScheduledEdit(previewPost);setPreviewPost(null)},className:"btn-ghost",style:{padding:"5px 10px",fontSize:10}},"\u270F\uFE0F Редактировать"),
+h("button",{onClick:function(){
+// Open in full editor
+var pp=previewPost;setPreviewPost(null);setCalendarOpen(false);
+var rb=null;for(var j=0;j<RUBRICS.length;j++){if(RUBRICS[j].id===pp.rubric)rb=RUBRICS[j]}
+if(rb){setSel(rb.id);setPendingDraftId(pp.id);setText(pp.content||"");if(pp.media_path){var paths=pp.media_path.split(",");setAttachedMediaList(paths.map(function(p){return{path:p.trim(),preview:p.trim(),name:p.trim().split("/").pop(),type:p.match(/\.(mp4|webm)/i)?"video":"image"}}))}}
+},className:"btn-ghost",style:{padding:"5px 10px",fontSize:10,color:"var(--accent)",borderColor:"rgba(232,93,31,0.3)"}},"\u{1F58A}\uFE0F Полный редактор"),
+h("button",{onClick:function(){setPreviewPost(null)},className:"btn-ghost",style:{padding:"5px 10px",fontSize:10}},"\u2715")
 )
+),
+previewPost.content?h("div",{style:{padding:16}},
+h("div",{style:{background:"#0E1621",borderRadius:12,overflow:"hidden",maxWidth:500}},
+previewPost.media_path?h("div",{style:{maxHeight:200,overflow:"hidden"}},
+h("img",{src:previewPost.media_path.split(",")[0].trim(),style:{width:"100%",display:"block",objectFit:"cover",maxHeight:200}})
+):null,
+h("div",{style:{padding:"12px 14px",background:"#182533",borderRadius:previewPost.media_path?"0":"12px"}},
+h("div",{style:{whiteSpace:"pre-wrap",fontSize:13,lineHeight:1.5,color:"#E8EAED",fontFamily:"-apple-system,'Segoe UI',Roboto,sans-serif"},dangerouslySetInnerHTML:{__html:renderTG(previewPost.content)}}),
+h("div",{style:{textAlign:"right",marginTop:6,fontSize:10,color:"rgba(255,255,255,0.3)"}},previewPost.content.length+" симв.")
+)
+)
+):h("div",{style:{padding:20,textAlign:"center",color:"var(--text-dim)",fontSize:12}},"Пост пуст. Нажми «Полный редактор» чтобы сгенерировать текст.")
+):null,
+// HOVER PREVIEW POPUP
+hoverPreview?h("div",{className:"cal-preview",style:{left:hoverPreview.x,top:hoverPreview.y},
+onMouseEnter:function(){clearTimeout(hoverTimerRef.current)},
+onMouseLeave:function(){setHoverPreview(null)}},
+hoverPreview.post.media_path?h("img",{className:"cal-preview-media",src:hoverPreview.post.media_path}):null,
+h("div",{className:"cal-preview-body"},
+h("div",{className:"cal-preview-meta"},
+h("span",null,hoverPreview.rubric?hoverPreview.rubric.icon:""),
+h("span",null,hoverPreview.rubric?hoverPreview.rubric.name:hoverPreview.post.rubric),
+h("span",null,hoverPreview.post.scheduled_time),
+h("span",{style:{marginLeft:"auto",color:hoverPreview.post.status==="ready"?"#4ade80":"var(--text-dim)"}},hoverPreview.post.status)
+),
+h("div",{className:"cal-preview-text",dangerouslySetInnerHTML:{__html:renderTG(hoverPreview.post.content||"<i>Нет текста</i>")}})
+),
+h("div",{className:"cal-preview-actions"},
+hoverPreview.post.status==="draft"&&hoverPreview.post.content?h("button",{className:"cal-preview-btn",style:{color:"#4ade80",borderColor:"rgba(74,222,128,0.3)"},onClick:function(){approvePost(hoverPreview.post);setHoverPreview(null)}},"\u2705 Одобрить"):null,
+h("button",{className:"cal-preview-btn",onClick:function(){setScheduledEdit(hoverPreview.post);setHoverPreview(null)}},"\u270F Редактировать"),
+h("button",{className:"cal-preview-btn",style:{color:"var(--accent)",borderColor:"rgba(232,93,31,0.3)"},onClick:function(){
+var pp=hoverPreview.post;var rr=hoverPreview.rubric;
+setHoverPreview(null);setCalendarOpen(false);
+setSel(pp.rubric);setPendingDraftId(pp.id);
+if(pp.content)setText(pp.content);
+if(pp.media_path){var paths=pp.media_path.split(",");setAttachedMediaList(paths.map(function(p){return{path:p,preview:p,name:"media",type:"image"}}))}
+}},"\u{1F4DD} Полный редактор")
+)
+):null
 )
 )
 ):null,
