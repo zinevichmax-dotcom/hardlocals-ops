@@ -1173,9 +1173,9 @@ app.get('/api/scheduled', auth, (req, res) => {
   const { from, to } = req.query;
   let rows;
   if (from && to) {
-    rows = db.prepare('SELECT * FROM scheduled WHERE scheduled_date >= ? AND scheduled_date <= ? ORDER BY scheduled_date').all(from, to);
+    rows = db.prepare('SELECT * FROM scheduled WHERE scheduled_date >= ? AND scheduled_date <= ? ORDER BY scheduled_date, scheduled_time').all(from, to);
   } else {
-    rows = db.prepare('SELECT * FROM scheduled ORDER BY scheduled_date').all();
+    rows = db.prepare('SELECT * FROM scheduled ORDER BY scheduled_date, scheduled_time').all();
   }
   res.json(rows);
 });
@@ -1241,6 +1241,16 @@ app.post('/api/scheduled/:id/content', auth, (req, res) => {
   }
   if (status) {
     db.prepare('UPDATE scheduled SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(status, id);
+  }
+  res.json({ ok: true });
+});
+
+// Update time of scheduled post
+app.post('/api/scheduled/:id/time', auth, (req, res) => {
+  const id = parseInt(req.params.id);
+  const { scheduled_time } = req.body;
+  if (scheduled_time) {
+    db.prepare('UPDATE scheduled SET scheduled_time = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(scheduled_time, id);
   }
   res.json({ ok: true });
 });
@@ -1892,46 +1902,62 @@ async function scrapeMediaBank() {
 
   for (const ch of MEDIA_BANK_CHANNELS) {
     try {
-      // Fetch multiple pages
-      let urls = [`https://t.me/s/${ch}`];
-      for (const pageUrl of urls) {
-        const res = await fetch(pageUrl, {
+      let nextUrl = `https://t.me/s/${ch}`;
+      let pages = 0;
+      const maxPages = 5; // 5 pages × ~20 posts = ~100 posts
+
+      while (nextUrl && pages < maxPages) {
+        const res = await fetch(nextUrl, {
           signal: AbortSignal.timeout(15000),
           headers: { 'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36' }
         });
-        if (!res.ok) { console.log('[MEDIA]', ch, 'status', res.status); continue; }
+        if (!res.ok) { console.log('[MEDIA]', ch, 'page', pages, 'status', res.status); break; }
         const html = await res.text();
+        pages++;
 
-        // Find all photo wraps (individual photos, not collages)
+        // Find oldest post ID for pagination
+        const postIds = [];
+        const idRegex = /data-post="[^/]+\/(\d+)"/g;
+        let idM;
+        while ((idM = idRegex.exec(html)) !== null) postIds.push(parseInt(idM[1]));
+        const oldestId = postIds.length > 0 ? Math.min(...postIds) : null;
+
+        // Find all photo wraps
         const photoRegex = /tgme_widget_message_photo_wrap[^>]*style="[^"]*background-image:url\('([^']+)'\)/g;
         let m;
+        let pageAdded = 0;
         while ((m = photoRegex.exec(html)) !== null) {
           const mediaUrl = m[1];
-          // Skip small images (emojis, avatars, stickers)
           if (mediaUrl.includes('/emoji/') || mediaUrl.includes('/userpic/') || mediaUrl.includes('/sticker/')) continue;
           if (mediaUrl.length < 50) continue;
 
           const uniqueKey = 'tg:' + ch + ':' + mediaUrl.slice(-40);
           if (existing.has(uniqueKey)) continue;
 
-          // Find post context for caption
-          const urlIdx = html.indexOf(mediaUrl);
-          const blockStart = html.lastIndexOf('data-post="', urlIdx);
-          let postId = '';
-          if (blockStart > -1) {
-            const postMatch = html.substring(blockStart).match(/data-post="([^"]+)"/);
-            if (postMatch) postId = postMatch[1];
-          }
           let caption = '';
+          const urlIdx = html.indexOf(mediaUrl);
           const nearbyText = html.substring(urlIdx, urlIdx + 2000);
           const captionMatch = nearbyText.match(/tgme_widget_message_text[^>]*>([\s\S]*?)<\/div>/);
-          if (captionMatch) caption = captionMatch[1].replace(/<br\s*\/?>/g, ' ').replace(/<[^>]*>/g, '').trim().slice(0, 200);
+          if (captionMatch) caption = captionMatch[1].replace(/<br\s*\/?>/g, ' ').replace(/<[^>]*>/g, '').replace(/&#\d+;/g, '').trim().slice(0, 200);
 
           db.prepare('INSERT OR IGNORE INTO media_bank (source, source_url, media_url, caption) VALUES (?, ?, ?, ?)')
             .run('tg:' + ch, uniqueKey, mediaUrl, caption || null);
           existing.add(uniqueKey);
           added++;
+          pageAdded++;
         }
+
+        console.log('[MEDIA]', ch, 'page', pages, '-', pageAdded, 'photos');
+
+        // Next page
+        if (oldestId && pageAdded > 0) {
+          nextUrl = `https://t.me/s/${ch}?before=${oldestId}`;
+        } else {
+          nextUrl = null;
+        }
+
+        // Small delay between pages
+        if (nextUrl) await new Promise(r => setTimeout(r, 500));
       }
       console.log('[MEDIA]', ch, 'done -', added, 'photos');
     } catch (e) {
@@ -1943,7 +1969,7 @@ async function scrapeMediaBank() {
 }
 
 app.get('/api/media-bank', auth, (req, res) => {
-  const items = db.prepare("SELECT * FROM media_bank ORDER BY created_at DESC LIMIT 100").all();
+  const items = db.prepare("SELECT * FROM media_bank ORDER BY id DESC LIMIT 200").all();
   res.json(items);
 });
 
@@ -2024,7 +2050,7 @@ app.get('*', (req, res) => {
 });
 
 app.listen(PORT, '0.0.0.0', () => {
-  console.log(`\n  Hard Locals Content Ops v12.3 (fix time picker + media bank photos)`);
+  console.log(`\n  Hard Locals Content Ops v12.4 (fix time picker + calendar sort + media bank pagination)`);
   console.log(`  → http://0.0.0.0:${PORT}`);
   console.log(`  → Anthropic: ${ANTHROPIC_API_KEY ? '✓' : '✗'}`);
   console.log(`  → TG Bot: ${TG_BOT_TOKEN ? '✓' : '✗'}`);

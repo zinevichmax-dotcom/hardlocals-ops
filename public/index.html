@@ -1188,14 +1188,33 @@ setScheduleForm({date:fmtYMD(new Date()),time:"10:00"});
 }
 
 function submitScheduleForm(){
-if(!scheduleForm||!text)return;
+if(!text)return;
+// Read directly from DOM to avoid stale closure
+var dateEl=document.getElementById("sched-date-input");
+var timeEl=document.getElementById("sched-time-input");
+var dateVal=dateEl?dateEl.value:fmtYMD(new Date());
+var timeVal=timeEl?timeEl.value:"10:00";
 var mediaPaths=attachedMediaList&&attachedMediaList.length>0?attachedMediaList.map(function(m){return m.path}).join(","):null;
-var body={scheduled_date:scheduleForm.date,scheduled_time:scheduleForm.time,rubric:rub?rub.id:"custom",title:(rub?rub.name:"Пост")+" "+scheduleForm.date,notes:"",content:text,media_path:mediaPaths,status:"ready",items:[]};
+
+if(pendingDraftId){
+// UPDATE existing draft (change time/date)
+fetch("/api/scheduled/"+pendingDraftId+"/content",{method:"POST",headers:{"Content-Type":"application/json",Authorization:"Bearer "+token},body:JSON.stringify({content:text,media_path:mediaPaths,scheduled_date:dateVal,status:"ready"})}).then(function(r){return r.json()}).then(function(d){
+if(d.error){toast(d.error,"err");return}
+// Also update time
+fetch("/api/scheduled/"+pendingDraftId+"/time",{method:"POST",headers:{"Content-Type":"application/json",Authorization:"Bearer "+token},body:JSON.stringify({scheduled_time:timeVal})}).then(function(){
+toast("Обновлено: "+dateVal+" "+timeVal,"ok");
+setScheduleForm(null);setPendingDraftId(null);
+});
+});
+} else {
+// CREATE new scheduled post
+var body={scheduled_date:dateVal,scheduled_time:timeVal,rubric:rub?rub.id:"custom",title:(rub?rub.name:"Пост")+" "+dateVal,notes:"",content:text,media_path:mediaPaths,status:"ready",items:[]};
 fetch("/api/scheduled",{method:"POST",headers:{"Content-Type":"application/json",Authorization:"Bearer "+token},body:JSON.stringify(body)}).then(function(r){return r.json()}).then(function(d){
 if(d.error){toast(d.error,"err");return}
-toast("Запланировано на "+scheduleForm.date+" "+scheduleForm.time,"ok");
+toast("Запланировано на "+dateVal+" "+timeVal,"ok");
 setScheduleForm(null);
 });
+}
 }
 
 function pickImgAsAttachment(url){
@@ -1577,7 +1596,7 @@ var todayStr=fmtYMD(new Date());
 for(var i=0;i<28;i++){
 var d=new Date(start);d.setDate(start.getDate()+i);
 var ymd=fmtYMD(d);
-var dayPosts=scheduled.filter(function(s){return s.scheduled_date===ymd});
+var dayPosts=scheduled.filter(function(s){return s.scheduled_date===ymd}).sort(function(a,b){return(a.scheduled_time||"").localeCompare(b.scheduled_time||"")});
 var isToday=ymd===todayStr;
 var isPast=ymd<todayStr;
 var dayName=["Пн","Вт","Ср","Чт","Пт","Сб","Вс"][(d.getDay()+6)%7];
@@ -2110,11 +2129,11 @@ h("span",{className:"preview-counter"+(overLimit?" over":"")},String(pt.length)+
 ),
 h("div",{className:"copy-row"},PLATS.map(function(p){return h("button",{key:p.id,onClick:function(){copyFor(p.id)},className:"copy-btn"+(copied===p.id?" copied":"")},copied===p.id?"\u2713 "+p.name:"\u2192 "+p.name)})),
 h("div",{className:"post-row"},
-pendingDraftId&&text?h("button",{onClick:saveDraftToCalendar,className:"post-btn",style:{color:"#4ade80",borderColor:"rgba(74,222,128,0.4)",background:"rgba(74,222,128,0.08)",fontWeight:700}},"\u{1F4BE} В календарь"):null,
-!pendingDraftId&&text&&!scheduleForm?h("button",{onClick:scheduleFromEditor,className:"post-btn",style:{color:"#4ade80",borderColor:"rgba(74,222,128,0.4)",background:"rgba(74,222,128,0.08)"}},"\u{1F4C5} Запланировать"):null,
+pendingDraftId&&text&&!scheduleForm?h("button",{onClick:saveDraftToCalendar,className:"post-btn",style:{color:"#4ade80",borderColor:"rgba(74,222,128,0.4)",background:"rgba(74,222,128,0.08)",fontWeight:700}},"\u{1F4BE} Сохранить текст"):null,
+text&&!scheduleForm?h("button",{onClick:scheduleFromEditor,className:"post-btn",style:{color:"#4ade80",borderColor:"rgba(74,222,128,0.4)",background:"rgba(74,222,128,0.08)"}},pendingDraftId?"\u23F0 Изменить время":"\u{1F4C5} Запланировать"):null,
 scheduleForm?h("div",{style:{display:"flex",alignItems:"center",gap:8,padding:"4px 0",flex:"1 0 100%"}},
-h("input",{type:"date",className:"input",value:scheduleForm.date,onChange:function(e){setScheduleForm(function(prev){return{date:e.target.value,time:prev.time}})},style:{width:160,padding:"10px 12px"}}),
-h("input",{type:"time",className:"input",value:scheduleForm.time,onChange:function(e){setScheduleForm(function(prev){return{date:prev.date,time:e.target.value}})},style:{width:120,padding:"10px 12px"}}),
+h("input",{id:"sched-date-input",type:"date",className:"input",defaultValue:scheduleForm.date,style:{width:160,padding:"10px 12px"}}),
+h("input",{id:"sched-time-input",type:"time",className:"input",defaultValue:scheduleForm.time,style:{width:120,padding:"10px 12px"}}),
 h("button",{onClick:submitScheduleForm,className:"post-btn",style:{color:"#4ade80",borderColor:"rgba(74,222,128,0.4)",background:"rgba(74,222,128,0.15)",fontWeight:700}},"\u2705 Запланировать"),
 h("button",{onClick:function(){setScheduleForm(null)},className:"post-btn",style:{color:"var(--text-dim)",borderColor:"var(--line-soft)"}},"\u2715")
 ):null,
