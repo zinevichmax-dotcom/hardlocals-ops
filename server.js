@@ -148,6 +148,17 @@ db.exec(`
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
   );
   CREATE INDEX IF NOT EXISTS idx_humor_status ON humor_queue(status);
+  CREATE TABLE IF NOT EXISTS media_bank (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    source TEXT,
+    source_url TEXT UNIQUE,
+    media_url TEXT,
+    media_path TEXT,
+    caption TEXT,
+    tags TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+  CREATE INDEX IF NOT EXISTS idx_media_bank_source ON media_bank(source);
 `);
 
 // Migration: add photo_path if missing
@@ -1871,6 +1882,72 @@ app.post('/api/humor-queue/:id/reject', auth, (req, res) => {
   res.json({ ok: true });
 });
 
+// ═══════ MEDIA BANK (from TG channel) ═══════
+const MEDIA_BANK_CHANNELS = ['hardlocals'];
+
+async function scrapeMediaBank() {
+  console.log('[MEDIA] Scraping club channels for photos...');
+  const existing = new Set(db.prepare("SELECT source_url FROM media_bank").all().map(r => r.source_url));
+  let added = 0;
+
+  for (const ch of MEDIA_BANK_CHANNELS) {
+    try {
+      const res = await fetch(`https://t.me/s/${ch}`, {
+        signal: AbortSignal.timeout(15000),
+        headers: { 'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36' }
+      });
+      if (!res.ok) { console.log('[MEDIA]', ch, 'status', res.status); continue; }
+      const html = await res.text();
+
+      // Extract all posts with photos
+      const postRegex = /data-post="([^"]+)"([\s\S]*?)(?=data-post="|$)/gi;
+      let m;
+      while ((m = postRegex.exec(html)) !== null) {
+        const postId = m[1];
+        const block = m[2];
+        const sourceUrl = `https://t.me/${postId}`;
+        if (existing.has(sourceUrl)) continue;
+
+        // Find all images in this post
+        const imgRegex = /background-image:url\('([^']+)'\)/g;
+        let imgMatch;
+        while ((imgMatch = imgRegex.exec(block)) !== null) {
+          const mediaUrl = imgMatch[1];
+          if (mediaUrl.includes('/emoji/') || mediaUrl.includes('/userpic/')) continue;
+
+          // Extract caption
+          let caption = '';
+          const textMatch = block.match(/<div class="tgme_widget_message_text[^"]*"[^>]*>([\s\S]*?)<\/div>/);
+          if (textMatch) caption = textMatch[1].replace(/<br\s*\/?>/g, ' ').replace(/<[^>]*>/g, '').trim().slice(0, 200);
+
+          const imgUrl = sourceUrl + '#' + (added);
+          if (existing.has(imgUrl)) continue;
+
+          db.prepare('INSERT OR IGNORE INTO media_bank (source, source_url, media_url, caption) VALUES (?, ?, ?, ?)')
+            .run('tg:' + ch, imgUrl, mediaUrl, caption || null);
+          existing.add(imgUrl);
+          added++;
+        }
+      }
+      console.log('[MEDIA]', ch, 'done');
+    } catch (e) {
+      console.error('[MEDIA]', ch, 'error:', e.message);
+    }
+  }
+  console.log(`[MEDIA] Added ${added} photos to bank`);
+  return added;
+}
+
+app.get('/api/media-bank', auth, (req, res) => {
+  const items = db.prepare("SELECT * FROM media_bank ORDER BY created_at DESC LIMIT 100").all();
+  res.json(items);
+});
+
+app.post('/api/media-bank/refresh', auth, async (req, res) => {
+  const added = await scrapeMediaBank();
+  res.json({ ok: true, added });
+});
+
 // ═══════ HISTORY ═══════
 app.get('/api/posts', auth, (req, res) => {
   const posts = db.prepare('SELECT * FROM posts ORDER BY created_at DESC LIMIT 100').all();
@@ -1943,7 +2020,7 @@ app.get('*', (req, res) => {
 });
 
 app.listen(PORT, '0.0.0.0', () => {
-  console.log(`\n  Hard Locals Content Ops v12.1 (brand voice + README + UX polish)`);
+  console.log(`\n  Hard Locals Content Ops v12.2 (media bank from TG channel @hardlocals)`);
   console.log(`  → http://0.0.0.0:${PORT}`);
   console.log(`  → Anthropic: ${ANTHROPIC_API_KEY ? '✓' : '✗'}`);
   console.log(`  → TG Bot: ${TG_BOT_TOKEN ? '✓' : '✗'}`);

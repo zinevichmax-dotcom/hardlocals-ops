@@ -480,6 +480,12 @@ var usersOpen=usersOpenS[0],setUsersOpen=usersOpenS[1];
 var toasts=toastsS[0],setToasts=toastsS[1];
 var historyFilter=historyFilterS[0],setHistoryFilter=historyFilterS[1];
 var scheduleForm=scheduleFormS[0],setScheduleForm=scheduleFormS[1];
+var mediaBankS=useS([]);
+var mediaBankOpenS=useS(false);
+var mediaBankLoadingS=useS(false);
+var mediaBank=mediaBankS[0],setMediaBank=mediaBankS[1];
+var mediaBankOpen=mediaBankOpenS[0],setMediaBankOpen=mediaBankOpenS[1];
+var mediaBankLoading=mediaBankLoadingS[0],setMediaBankLoading=mediaBankLoadingS[1];
 
 function toast(msg,type){
 var id=Date.now()+Math.random();
@@ -495,6 +501,24 @@ var selected=val.substring(start,end)||"текст";
 var newVal=val.substring(0,start)+before+selected+after+val.substring(end);
 setText(newVal);
 setTimeout(function(){ta.focus();ta.selectionStart=start+before.length;ta.selectionEnd=start+before.length+selected.length},0);
+}
+
+function loadMediaBank(){
+fetch("/api/media-bank",{headers:{Authorization:"Bearer "+token}}).then(function(r){return r.json()}).then(function(d){setMediaBank(Array.isArray(d)?d:[])});
+}
+function toggleMediaBank(){
+setMediaBankOpen(!mediaBankOpen);setBannerOpen(false);setImgSearch(false);
+if(!mediaBankOpen&&mediaBank.length===0){
+setMediaBankLoading(true);
+apiCall("/api/media-bank/refresh",{},token).then(function(){setMediaBankLoading(false);loadMediaBank()}).catch(function(){setMediaBankLoading(false)});
+}
+}
+function refreshMediaBank(){
+setMediaBankLoading(true);
+apiCall("/api/media-bank/refresh",{},token).then(function(d){
+setMediaBankLoading(false);loadMediaBank();
+toast(d.added>0?d.added+" новых фото":"Нет новых фото","info");
+}).catch(function(){setMediaBankLoading(false)});
 }
 var sel=selS[0],setSel=selS[1];
 var fields=fieldsS[0],setFields=fieldsS[1];
@@ -1853,7 +1877,8 @@ h("div",{className:"work-inner"},
 h("div",{style:{marginBottom:24}},
 h("div",{style:{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}},
 h("button",{onClick:function(){setBannerOpen(!bannerOpen);setImgSearch(false)},className:"tool-btn"},"\u{1F5BC}\uFE0F ",bannerOpen?"Скрыть":"Баннер"),
-h("button",{onClick:function(){setImgSearch(!imgSearch);setBannerOpen(false);if(!imgSearch&&!imgQuery)suggestImgQuery()},className:"tool-btn"},"\u{1F50D} ",imgSearch?"Скрыть":"Найти фото"),
+h("button",{onClick:function(){setImgSearch(!imgSearch);setBannerOpen(false);setMediaBankOpen(false);if(!imgSearch&&!imgQuery)suggestImgQuery()},className:"tool-btn"},"\u{1F50D} ",imgSearch?"Скрыть":"Найти фото"),
+h("button",{onClick:function(){toggleMediaBank()},className:"tool-btn",style:mediaBankOpen?{background:"rgba(232,93,31,0.1)",borderColor:"var(--accent)",color:"var(--accent)"}:{}},"\u{1F4F8} Фото клуба"+(mediaBank.length>0?" ("+mediaBank.length+")":"")),
 h("label",{htmlFor:"tools-upload-input",className:"tool-btn",style:{cursor:"pointer"}},"\u{1F4CE} Загрузить",
 h("input",{id:"tools-upload-input",type:"file",multiple:true,accept:"image/*,video/*",style:{display:"none"},onChange:function(e){handleAttachFilesUpload(e.target.files);e.target.value=""}})
 ),
@@ -1923,6 +1948,29 @@ h("button",{onClick:function(e){e.stopPropagation();pickImgForBanner(img.url)},s
 h("div",{className:"image-author"},img.author)
 )}))
 ):imgLoading?h("div",{style:{textAlign:"center",padding:20,color:"var(--text-dim)",fontSize:11}},text&&text.length>50?"AI подбирает запрос...":"Ищу..."):null
+)
+):null,
+// MEDIA BANK PANEL
+mediaBankOpen?h("div",{className:"panel"},
+h("div",{className:"panel-head",style:{display:"flex",justifyContent:"space-between",alignItems:"center"}},
+h("span",null,"\u{1F4F8} Фото клуба из @hardlocals"+(mediaBank.length>0?" ("+mediaBank.length+")":"")),
+h("button",{onClick:refreshMediaBank,disabled:mediaBankLoading,className:"btn-ghost",style:{padding:"4px 10px",fontSize:10}},mediaBankLoading?"\u23F3...":"\u{1F504} Обновить")
+),
+h("div",{className:"panel-body"},
+mediaBankLoading&&mediaBank.length===0?h("div",{style:{textAlign:"center",padding:20}},
+h("div",{className:"skeleton",style:{width:"100%",height:100,marginBottom:8}}),
+h("div",{style:{fontSize:11,color:"var(--text-dim)"}},"Загружаю фото из канала...")
+):
+mediaBank.length===0?h("div",{style:{textAlign:"center",padding:20,color:"var(--text-dim)",fontSize:12}},"Фото не найдены. Нажми «Обновить»"):
+h("div",{className:"image-grid",style:{maxHeight:300,overflowY:"auto"}},mediaBank.map(function(img){
+return h("div",{key:img.id,className:"image-item",style:{cursor:"pointer"},onClick:function(){
+addAttachedMedia({path:img.media_url,preview:img.media_url,name:"club-photo.jpg",type:"image"});
+toast("Фото прикреплено","ok");
+}},
+h("img",{src:img.media_url,loading:"lazy",style:{width:"100%",height:"100%",objectFit:"cover"}}),
+img.caption?h("div",{style:{position:"absolute",bottom:0,left:0,right:0,padding:"4px 6px",background:"rgba(0,0,0,0.7)",fontSize:9,color:"#fff",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}},img.caption.slice(0,50)):null
+);
+}))
 )
 ):null
 ),
