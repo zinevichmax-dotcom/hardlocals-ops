@@ -1052,12 +1052,14 @@ var fd=new FormData();fd.append("file",blob,"banner.jpg");
 return fetch("/api/upload",{method:"POST",headers:{Authorization:"Bearer "+token},body:fd});
 }).then(function(r){return r.json()}).then(function(d){
 if(d.path){
-console.log("[ATTACH] banner attached:",d.path);
-if(addAttachedMedia({path:d.path,preview:banner,name:"banner.jpg",type:"image"})){
+// Remove existing banner if any
+setAttachedMediaList(function(prev){
+var filtered=prev.filter(function(m){return m.name!=="banner.jpg"});
+return filtered.concat([{path:d.path,preview:banner,name:"banner.jpg",type:"image"}]);
+});
 setBannerOpen(false);
 setBanner(null);
-setBannerPhoto("");
-}
+toast("Баннер прикреплён","ok");
 }else{toast(d.error||"Не удалось","err")}
 }).catch(function(e){toast(e.message,"err")});
 }
