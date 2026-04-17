@@ -883,39 +883,40 @@ return t;
 function generate(){
 if(!rub)return;setLoading(true);setError("");
 
-// Build message content
 var userContent=rub.pr(fields);
+var topicText=fields.topic||"";
 
-// If humor rubric and image attached, include image for AI vision
+// If humor rubric and IMAGE attached, include for AI vision
 if(rub.id==="humor"&&attachedMediaList&&attachedMediaList.length>0){
 var img=attachedMediaList[0];
 var imgUrl=img.preview||img.path;
+var isImage=img.type==="image"||(imgUrl&&imgUrl.match(/\.(jpg|jpeg|png|gif|webp)(\?.*)?$/i));
 
-if(imgUrl&&imgUrl.startsWith("http")){
-// URL image - send directly
-userContent=[
-{type:"image",source:{type:"url",url:imgUrl}},
-{type:"text",text:"Посмотри на этот мем/картинку и напиши короткую смешную подпись к нему для Telegram-канала мотоклуба. На русском. 1-3 предложения. Стиль — как между своими."}
-];
+if(isImage&&imgUrl&&imgUrl.startsWith("http")){
+var visionPrompt="Посмотри на этот мем/картинку и напиши короткую смешную подпись к нему для Telegram-канала мотоклуба. На русском. 1-3 предложения. Стиль — как между своими.";
+if(topicText)visionPrompt+="\nКонтекст от автора: "+topicText;
+userContent=[{type:"image",source:{type:"url",url:imgUrl}},{type:"text",text:visionPrompt}];
 doGenerate(userContent);return;
-} else if(imgUrl&&imgUrl.startsWith("/uploads/")){
-// Uploaded file - fetch and convert to base64
+} else if(isImage&&imgUrl&&imgUrl.startsWith("/uploads/")){
+var visionPrompt2="Посмотри на этот мем/картинку и напиши короткую смешную подпись к нему для Telegram-канала мотоклуба. На русском. 1-3 предложения. Стиль — как между своими.";
+if(topicText)visionPrompt2+="\nКонтекст от автора: "+topicText;
 fetch(imgUrl).then(function(r){return r.blob()}).then(function(blob){
 var reader=new FileReader();
 reader.onload=function(){
 var b64=reader.result.split(",")[1];
 var mt=blob.type||"image/jpeg";
-userContent=[
-{type:"image",source:{type:"base64",media_type:mt,data:b64}},
-{type:"text",text:"Посмотри на этот мем/картинку и напиши короткую смешную подпись к нему для Telegram-канала мотоклуба. На русском. 1-3 предложения. Стиль — как между своими."}
-];
-doGenerate(userContent);
+doGenerate([{type:"image",source:{type:"base64",media_type:mt,data:b64}},{type:"text",text:visionPrompt2}]);
 };
 reader.readAsDataURL(blob);
 }).catch(function(){doGenerate(userContent)});
 return;
 }
+// Video or other media — use topic as text prompt, add context about media
+if(topicText){
+userContent="Напиши смешную подпись к видео для Telegram-канала мотоклуба. Описание видео: "+topicText+"\n1-3 предложения. Стиль — как между своими, без хэштегов.";
 }
+}
+
 doGenerate(userContent);
 }
 
@@ -1983,7 +1984,7 @@ h("input",{id:"photo-upload",type:"file",multiple:true,accept:"image/*",style:{d
 ),
 uploaded.length>0?h("div",{className:"field"},h("div",{className:"field-label"},"Загруженные"),h("div",{className:"image-grid"},uploaded.map(function(p,i){return h("div",{key:"u"+i,onClick:function(){setBannerPhoto(p)},className:"image-item"+(bannerPhoto===p?" picked":"")+(bannerPhoto&&bannerPhoto!==p?" dimmed":"")},h("img",{src:p,alt:""}))}))):null,
 h("div",{className:"field"},h("div",{className:"field-label"},"Фото с сайта"),h("div",{className:"image-grid"},SITE_PHOTOS.map(function(p){return h("div",{key:p,onClick:function(){setBannerPhoto(p)},className:"image-item"+(bannerPhoto===p?" picked":"")+(bannerPhoto&&bannerPhoto!==p?" dimmed":"")},h("img",{src:p,alt:""}))}))),
-mediaBank.length>0?h("div",{className:"field"},h("div",{className:"field-label",style:{display:"flex",justifyContent:"space-between"}},h("span",null,"\u{1F4F8} Фото клуба ("+mediaBank.length+")"),mediaBank.length===0?h("button",{onClick:function(){setMediaBankLoading(true);apiCall("/api/media-bank/refresh",{},token).then(function(){setMediaBankLoading(false);loadMediaBank()}).catch(function(){setMediaBankLoading(false)})},className:"btn-ghost",style:{padding:"2px 8px",fontSize:9}},mediaBankLoading?"...":"Загрузить"):null),h("div",{className:"image-grid",style:{maxHeight:200,overflowY:"auto"}},mediaBank.map(function(p){return h("div",{key:p.id,onClick:function(){setBannerPhoto(p.media_url)},className:"image-item"+(bannerPhoto===p.media_url?" picked":"")+(bannerPhoto&&bannerPhoto!==p.media_url?" dimmed":"")},h("img",{src:p.media_url,alt:"",loading:"lazy"}))}))):null,
+mediaBank.length>0?h("div",{className:"field"},h("div",{className:"field-label",style:{display:"flex",justifyContent:"space-between"}},h("span",null,"\u{1F4F8} Фото клуба ("+mediaBank.length+")"),mediaBank.length===0?h("button",{onClick:function(){setMediaBankLoading(true);apiCall("/api/media-bank/refresh",{},token).then(function(){setMediaBankLoading(false);loadMediaBank()}).catch(function(){setMediaBankLoading(false)})},className:"btn-ghost",style:{padding:"2px 8px",fontSize:9}},mediaBankLoading?"...":"Загрузить"):null),h("div",{style:{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(100px,1fr))",gap:6,maxHeight:250,overflowY:"auto"}},mediaBank.map(function(p){return h("div",{key:p.id,onClick:function(){setBannerPhoto(p.media_url)},style:{borderRadius:6,overflow:"hidden",cursor:"pointer",border:bannerPhoto===p.media_url?"2px solid var(--accent)":"2px solid transparent",opacity:bannerPhoto&&bannerPhoto!==p.media_url?0.4:1,transition:"all 0.15s"}},h("img",{src:p.media_url,style:{width:"100%",display:"block"},loading:"lazy"}))}))):null,
 h("div",{className:"actions"},
 h("button",{onClick:makeBanner,disabled:!bannerPhoto,className:"btn-primary"},banner?"Перегенерировать":"Сгенерировать баннер"),
 banner?h("button",{onClick:attachBanner,className:"btn-primary accent btn-attach-pulse"},"\u{1F4CE} "+(attachedMediaList.length>0?"Добавить в карусель":"Прикрепить к посту")):null

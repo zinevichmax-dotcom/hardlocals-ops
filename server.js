@@ -1191,8 +1191,21 @@ app.post('/api/scheduled', auth, (req, res) => {
 app.put('/api/scheduled/:id', auth, (req, res) => {
   const { scheduled_date, scheduled_time, rubric, title, notes, content, items, status, media_path } = req.body;
   const id = parseInt(req.params.id);
+  // Get current values to preserve fields not sent in request
+  const current = db.prepare('SELECT * FROM scheduled WHERE id = ?').get(id);
   db.prepare('UPDATE scheduled SET scheduled_date=?, scheduled_time=?, rubric=?, title=?, notes=?, content=?, items=?, status=?, media_path=?, updated_at=CURRENT_TIMESTAMP WHERE id=?')
-    .run(scheduled_date, scheduled_time || '10:00', rubric, title, notes, content, items ? JSON.stringify(items) : null, status || 'planned', media_path || null, id);
+    .run(
+      scheduled_date || current?.scheduled_date,
+      scheduled_time || current?.scheduled_time || '10:00',
+      rubric || current?.rubric,
+      title !== undefined ? title : current?.title,
+      notes !== undefined ? notes : current?.notes,
+      content !== undefined ? content : current?.content,
+      items ? JSON.stringify(items) : current?.items,
+      status || current?.status || 'draft',
+      media_path !== undefined ? (media_path || null) : current?.media_path,
+      id
+    );
   res.json({ ok: true });
 });
 
@@ -2053,7 +2066,7 @@ app.get('*', (req, res) => {
 });
 
 app.listen(PORT, '0.0.0.0', () => {
-  console.log(`\n  Hard Locals Content Ops v12.6 (datetime-local picker + vision for uploads)`);
+  console.log(`\n  Hard Locals Content Ops v12.8 (fix PUT preserve fields + banner media grid)`);
   console.log(`  → http://0.0.0.0:${PORT}`);
   console.log(`  → Anthropic: ${ANTHROPIC_API_KEY ? '✓' : '✗'}`);
   console.log(`  → TG Bot: ${TG_BOT_TOKEN ? '✓' : '✗'}`);
