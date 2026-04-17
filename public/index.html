@@ -716,8 +716,10 @@ if(m.bike||m.notes){fv.fact=[m.bike,m.notes].filter(Boolean).join(". ")}
 setFields(fv);
 setMembersOpen(false);setMemberEdit(null);
 if(m.photo_path){
-// Add to uploaded list if not already there
-var photoUrl=m.photo_path.indexOf("/")===0?window.location.origin+m.photo_path:m.photo_path;
+var photoUrl=m.photo_path.indexOf("/")===0?m.photo_path:m.photo_path;
+// Attach photo directly to post (not just banner)
+addAttachedMedia({path:photoUrl,preview:photoUrl,name:m.name+".jpg",type:"image"});
+// Also set up banner
 setUploaded(function(prev){return prev.indexOf(photoUrl)>=0?prev:prev.concat([photoUrl])});
 setBannerPhoto(photoUrl);
 setBannerText((m.nickname||m.name).toUpperCase()+", С ДР!");
@@ -998,12 +1000,21 @@ var ctx=canvas.getContext("2d");
 var photo=new Image();
 if(bannerPhoto.indexOf("data:")!==0)photo.crossOrigin="anonymous";
 photo.onload=function(){
+// Draw blurred background - top-biased to keep faces visible
 ctx.filter="blur(12px)";
 var scale=Math.max(1200/photo.width,630/photo.height)*1.1;
 var w=photo.width*scale,hh=photo.height*scale;
-ctx.drawImage(photo,(1200-w)/2,(630-hh)/2,w,hh);
+var yPos=Math.min(0,(630-hh)*0.25); // top-biased: show upper part where faces are
+ctx.drawImage(photo,(1200-w)/2,yPos,w,hh);
 ctx.filter="none";
-ctx.fillStyle="rgba(0,0,0,0.55)";ctx.fillRect(0,0,1200,630);
+// Draw clear photo in center (smaller, with face visible)
+var photoScale=Math.min(1200/photo.width,630/photo.height)*0.85;
+var pw=photo.width*photoScale,ph=photo.height*photoScale;
+ctx.globalAlpha=0.3;
+ctx.drawImage(photo,(1200-pw)/2,(630-ph)*0.35,pw,ph);
+ctx.globalAlpha=1.0;
+// Dark overlay
+ctx.fillStyle="rgba(0,0,0,0.5)";ctx.fillRect(0,0,1200,630);
 ctx.fillStyle="#fff";
 ctx.textAlign="center";ctx.textBaseline="middle";
 ctx.shadowColor="rgba(0,0,0,0.8)";ctx.shadowBlur=20;
@@ -1801,7 +1812,22 @@ h("div",{style:{flex:1,minWidth:0}},
 h("div",{style:{fontSize:13,fontWeight:600,marginBottom:2}},m.name,m.nickname?h("span",{style:{color:"var(--text-muted)",fontWeight:400}}," ("+m.nickname+")"):null),
 h("div",{style:{fontSize:10,color:today?"var(--accent)":"var(--text-muted)",fontWeight:today?700:400}},today?"\u{1F382} СЕГОДНЯ!":"\u{1F382} через "+days+" дн.")
 ),
-h("button",{onClick:function(){pickRubric("birthday");setTimeout(function(){useMemberForBirthday(m)},50)},className:"btn-ghost",style:{padding:"5px 10px",fontSize:10,color:"var(--accent)",flexShrink:0}},"\u21A9 В пост")
+h("button",{onClick:function(){
+// Create birthday post directly in calendar
+var bday=m.birthday;
+var thisYear=new Date().getFullYear();
+var bdayDate=thisYear+"-"+bday.slice(5);
+var photoPath=m.photo_path||null;
+var title="ДР: "+(m.nickname||m.name);
+fetch("/api/scheduled",{method:"POST",headers:{"Content-Type":"application/json",Authorization:"Bearer "+token},body:JSON.stringify({
+scheduled_date:bdayDate,scheduled_time:"09:00",rubric:"birthday",title:title,
+content:"",media_path:photoPath,status:"draft",notes:"auto-birthday"
+})}).then(function(r){return r.json()}).then(function(d){
+if(d.error){toast(d.error,"err");return}
+toast(title+" добавлен на "+bdayDate,"ok");
+loadScheduled();
+});
+},className:"btn-ghost",style:{padding:"5px 10px",fontSize:10,color:"var(--accent)",flexShrink:0}},"\u{1F4C5} В план")
 );
 }))
 ),
