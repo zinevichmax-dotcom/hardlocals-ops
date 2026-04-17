@@ -1943,7 +1943,7 @@ app.get('*', (req, res) => {
 });
 
 app.listen(PORT, '0.0.0.0', () => {
-  console.log(`\n  Hard Locals Content Ops v11.6 (inline schedule form + keyboard shortcuts + zero alerts)`);
+  console.log(`\n  Hard Locals Content Ops v11.7 (color-coded rubrics + duplicate to calendar)`);
   console.log(`  → http://0.0.0.0:${PORT}`);
   console.log(`  → Anthropic: ${ANTHROPIC_API_KEY ? '✓' : '✗'}`);
   console.log(`  → TG Bot: ${TG_BOT_TOKEN ? '✓' : '✗'}`);

@@ -333,6 +333,12 @@ var GROUPS=[
 {l:"",ids:["custom"]}
 ];
 
+var RUBRIC_COLORS={
+kind_reminder:"#f59e0b",merch:"#3b82f6",cross_promo:"#8b5cf6",moto_news:"#06b6d4",riddle:"#ec4899",humor:"#f97316",
+trip_announce:"#10b981",season_opening:"#ef4444",season_calendar:"#6366f1",route_series:"#14b8a6",trip_digest:"#84cc16",
+birthday:"#f43f5e",values:"#a855f7",stories:"#64748b",custom:"#94a3b8"
+};
+
 var SITE_PHOTOS=[
 "https://thb.tildacdn.com/tild3663-3332-4362-a630-336365383765/-/resize/600x/-/empty/IMAGE_2025-10-21_121.jpg",
 "https://thb.tildacdn.com/tild3536-3639-4163-b436-323238363139/-/resize/600x/-/empty/photo_2025-10-20_220.jpeg",
@@ -1238,7 +1244,11 @@ h("span",{style:{fontSize:11,color:"var(--text-muted)"}},rubricName(post.rubric)
 post.media_path?h("span",{style:{fontSize:10,color:"var(--text-dim)"}},"\u{1F4CE}"):null,
 h("span",{style:{fontSize:10,color:"var(--text-dim)",marginLeft:"auto"}},formatDate(post.created_at)),
 h("button",{onClick:function(){copyHistory(post.content)},className:"btn-ghost",style:{padding:"4px 10px",fontSize:10}},"Копировать"),
-h("button",{onClick:function(){useAsTemplate(post.content)},className:"btn-ghost",style:{padding:"4px 10px",fontSize:10,color:"var(--success)"}},"В редактор")
+h("button",{onClick:function(){useAsTemplate(post.content)},className:"btn-ghost",style:{padding:"4px 10px",fontSize:10,color:"var(--success)"}},"В редактор"),
+h("button",{onClick:function(){
+var d=fmtYMD(new Date());
+fetch("/api/scheduled",{method:"POST",headers:{"Content-Type":"application/json",Authorization:"Bearer "+token},body:JSON.stringify({scheduled_date:d,scheduled_time:"10:00",rubric:post.rubric||"custom",title:rubricName(post.rubric)+" (копия)",content:post.content,media_path:post.media_path,status:"draft"})}).then(function(r){return r.json()}).then(function(){toast("Скопировано в календарь","ok")});
+},className:"btn-ghost",style:{padding:"4px 10px",fontSize:10,color:"var(--accent)"}},"\u{1F4C5}")
 ),
 h("div",{className:"history-text"},(post.content||"").replace(/<[^>]*>/g,"").slice(0,300)+(post.content&&post.content.length>300?"...":""))
 );
@@ -1536,7 +1546,8 @@ dayPosts.map(function(p){var r=null;for(var j=0;j<RUBRICS.length;j++){if(RUBRICS
 var statusColors={draft:"var(--line)",ready:"rgba(74,222,128,0.5)",sent:"rgba(74,222,128,0.8)",sending:"var(--accent)",error:"var(--danger)"};
 var statusIcons={draft:"\u270F",ready:"\u23F3",sent:"\u2705",sending:"\u{1F504}",error:"\u26A0"};
 var st=p.status||"planned";
-return h("div",{key:p.id,draggable:st!=="sent",onDragStart:function(ev){ev.dataTransfer.setData("text/plain",String(p.id))},style:{background:"var(--bg-card)",borderLeft:"3px solid "+(statusColors[st]||"var(--line-soft)"),borderRadius:5,padding:"4px 6px",fontSize:10,cursor:st!=="sent"?"grab":"pointer",display:"flex",alignItems:"center",gap:4},title:p.content?(p.content.replace(/<[^>]*>/g,"").slice(0,120)+"..."):(st==="draft"?"Нет текста — сгенерируй":""),onClick:function(e){e.stopPropagation();setScheduledEdit(p)}},
+var rubColor=RUBRIC_COLORS[p.rubric]||"var(--line-soft)";
+return h("div",{key:p.id,draggable:st!=="sent",onDragStart:function(ev){ev.dataTransfer.setData("text/plain",String(p.id))},style:{background:st==="sent"?"rgba(0,0,0,0.15)":"var(--bg-card)",borderLeft:"3px solid "+rubColor,borderRadius:5,padding:"4px 6px",fontSize:10,cursor:st!=="sent"?"grab":"pointer",display:"flex",alignItems:"center",gap:4},title:p.content?(p.content.replace(/<[^>]*>/g,"").slice(0,120)+"..."):(st==="draft"?"Нет текста — сгенерируй":""),onClick:function(e){e.stopPropagation();setScheduledEdit(p)}},
 h("span",{title:st},statusIcons[st]||""),
 h("span",null,r?r.icon:""),
 h("span",{style:{flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",color:st==="sent"?"var(--text-dim)":"var(--text)"}},p.scheduled_time?(p.scheduled_time+" "):"",p.title||(r?r.name:p.rubric)),
@@ -1643,6 +1654,7 @@ GROUPS.map(function(g,gi){return h("div",{key:gi,className:"sidebar-group"},
 g.l?h("div",{className:"sidebar-group-label"},g.l):null,
 g.ids.map(function(id){var r=null;for(var i=0;i<RUBRICS.length;i++){if(RUBRICS[i].id===id)r=RUBRICS[i]}if(!r)return null;var active=sel===id;
 return h("div",{key:id,className:"rubric-item"+(active?" active":""),onClick:function(){pickRubric(id)}},
+h("span",{style:{width:4,height:4,borderRadius:"50%",background:RUBRIC_COLORS[id]||"var(--text-dim)",flexShrink:0,opacity:active?1:0.5}}),
 h("span",{className:"rubric-icon-s"},r.icon),h("span",{className:"rubric-name-s"},r.name),h("span",{className:"rubric-freq-s"},r.freq));})
 );})
 ,
