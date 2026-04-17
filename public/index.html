@@ -1044,10 +1044,10 @@ setPendingDraftId(sched.id);
 function saveDraftToCalendar(){
 if(!pendingDraftId||!text)return;
 var mediaPaths=attachedMediaList&&attachedMediaList.length>0?attachedMediaList.map(function(m){return m.path}).join(","):null;
-apiCall("/api/scheduled/"+pendingDraftId+"/content",{content:text,media_path:mediaPaths},token).then(function(d){
+apiCall("/api/scheduled/"+pendingDraftId+"/content",{content:text,media_path:mediaPaths,status:"ready"},token).then(function(d){
 if(d.error){alert(d.error);return}
 setPendingDraftId(null);
-alert("Текст сохранён в календарь! Открой запись и поставь «В очередь» для автопубликации.");
+alert("Сохранено и поставлено в очередь! Scheduler отправит автоматически.");
 });
 }
 

@@ -1066,13 +1066,16 @@ app.delete('/api/scheduled/:id', auth, (req, res) => {
 // Save generated content back to a scheduled draft (also supports date move for drag-drop)
 app.post('/api/scheduled/:id/content', auth, (req, res) => {
   const id = parseInt(req.params.id);
-  const { content, media_path, scheduled_date } = req.body;
+  const { content, media_path, scheduled_date, status } = req.body;
   if (scheduled_date) {
     db.prepare('UPDATE scheduled SET scheduled_date = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(scheduled_date, id);
   }
   if (content !== undefined) {
     db.prepare('UPDATE scheduled SET content = ?, media_path = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?')
       .run(content || null, media_path || null, id);
+  }
+  if (status) {
+    db.prepare('UPDATE scheduled SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(status, id);
   }
   res.json({ ok: true });
 });
@@ -1786,7 +1789,7 @@ app.get('*', (req, res) => {
 });
 
 app.listen(PORT, '0.0.0.0', () => {
-  console.log(`\n  Hard Locals Content Ops v10.4 (meme browser + URL import + curated sources)`);
+  console.log(`\n  Hard Locals Content Ops v10.5 (auto-approve from editor + meme browser)`);
   console.log(`  → http://0.0.0.0:${PORT}`);
   console.log(`  → Anthropic: ${ANTHROPIC_API_KEY ? '✓' : '✗'}`);
   console.log(`  → TG Bot: ${TG_BOT_TOKEN ? '✓' : '✗'}`);
