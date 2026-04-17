@@ -367,6 +367,9 @@ function App(){
 var useS=React.useState,useE=React.useEffect,useR=React.useRef;
 var tokenS=useS(localStorage.getItem("token")||"");
 var authS=useS(false);
+var userRoleS=useS("editor");
+var usersListS=useS([]);
+var usersOpenS=useS(false);
 var selS=useS(null);
 var fieldsS=useS({});
 var textS=useS("");
@@ -428,6 +431,9 @@ var taR=useR(null);
 
 var token=tokenS[0],setToken=tokenS[1];
 var authed=authS[0],setAuthed=authS[1];
+var userRole=userRoleS[0],setUserRole=userRoleS[1];
+var usersList=usersListS[0],setUsersList=usersListS[1];
+var usersOpen=usersOpenS[0],setUsersOpen=usersOpenS[1];
 var sel=selS[0],setSel=selS[1];
 var fields=fieldsS[0],setFields=fieldsS[1];
 var text=textS[0],setText=textS[1];
@@ -492,7 +498,7 @@ var curPlat=null;
 for(var i=0;i<PLATS.length;i++){if(PLATS[i].id===plat)curPlat=PLATS[i]}
 
 useE(function(){
-if(token){apiCall("/api/auth/check",{},token).then(function(r){if(r.ok){setAuthed(true);loadUpcomingBdays();loadRSS();loadCollectedUrls();loadScheduled()}else{localStorage.removeItem("token");setToken("")}}).catch(function(){localStorage.removeItem("token");setToken("")})}
+if(token){apiCall("/api/auth/check",{},token).then(function(r){if(r.ok){setAuthed(true);setUserRole(r.role||"editor");loadUpcomingBdays();loadRSS();loadCollectedUrls();loadScheduled()}else{localStorage.removeItem("token");setToken("")}}).catch(function(){localStorage.removeItem("token");setToken("")})}
 },[token]);
 
 function loadCollectedUrls(){
@@ -677,7 +683,7 @@ useE(function(){if(taR.current){taR.current.style.height="auto";taR.current.styl
 function doLogin(){
 setLoginB(true);setLoginE("");
 apiCall("/api/auth/login",{username:loginU,password:loginP}).then(function(r){
-if(r.token){localStorage.setItem("token",r.token);setToken(r.token);setAuthed(true)}else{setLoginE(r.error||"Ошибка")}
+if(r.token){localStorage.setItem("token",r.token);setToken(r.token);setAuthed(true);setUserRole(r.role||"editor")}else{setLoginE(r.error||"Ошибка")}
 setLoginB(false);
 }).catch(function(e){setLoginE(String(e.message||e));setLoginB(false)})}
 
@@ -810,7 +816,39 @@ if(r.ok){setPostMsg("ok")}else{setPostMsg(String(r.error||"Ошибка"))}
 setPosting("");
 }).catch(function(e){setPostMsg(String(e.message||e));setPosting("")})}
 
-function logout(){localStorage.removeItem("token");setToken("");setAuthed(false)}
+function logout(){localStorage.removeItem("token");setToken("");setAuthed(false);setUserRole("editor")}
+
+function loadUsers(){
+fetch("/api/users",{headers:{Authorization:"Bearer "+token}}).then(function(r){return r.json()}).then(function(d){setUsersList(Array.isArray(d)?d:[])}).catch(function(){});
+}
+function openUsers(){setUsersOpen(true);loadUsers()}
+function addUser(){
+var u=prompt("Логин нового пользователя:");
+if(!u)return;
+var p=prompt("Пароль:");
+if(!p)return;
+var r=prompt("Роль (admin или editor):","editor");
+apiCall("/api/users",{username:u,password:p,role:r||"editor"},token).then(function(d){
+if(d.error){alert(d.error);return}
+alert("Пользователь "+u+" создан!");
+loadUsers();
+});
+}
+function deleteUser(id,name){
+if(!confirm("Удалить пользователя "+name+"?"))return;
+fetch("/api/users/"+id,{method:"DELETE",headers:{Authorization:"Bearer "+token}}).then(function(r){return r.json()}).then(function(d){
+if(d.error){alert(d.error);return}
+loadUsers();
+});
+}
+function resetPassword(id){
+var p=prompt("Новый пароль:");
+if(!p)return;
+fetch("/api/users/"+id+"/password",{method:"PUT",headers:{"Content-Type":"application/json",Authorization:"Bearer "+token},body:JSON.stringify({password:p})}).then(function(r){return r.json()}).then(function(d){
+if(d.error){alert(d.error);return}
+alert("Пароль обновлён");
+});
+}
 
 function handlePhotoUpload(files){
 Array.from(files).forEach(function(file){
@@ -1232,6 +1270,32 @@ h("div",{style:{fontSize:10,color:"var(--text-dim)",marginTop:2}},p.platform)
 return h("div",{className:"app"},
 historyModal,
 statsModal,
+usersOpen?h("div",{className:"modal-backdrop",onClick:function(e){if(e.target===e.currentTarget)setUsersOpen(false)}},
+h("div",{className:"modal",style:{maxWidth:500}},
+h("div",{className:"modal-head"},
+h("div",null,h("div",{className:"modal-title"},"\u{1F465} Пользователи"),h("div",{className:"modal-sub"},usersList.length+" пользователей")),
+h("div",{style:{display:"flex",gap:6}},
+h("button",{onClick:addUser,className:"btn-primary accent",style:{padding:"7px 14px",fontSize:11}},"+ Добавить"),
+h("button",{onClick:function(){setUsersOpen(false)},className:"btn-ghost"},"Закрыть")
+)
+),
+h("div",{className:"modal-body"},
+usersList.map(function(u){
+return h("div",{key:u.id,style:{padding:14,background:"var(--bg-elev)",border:"1px solid var(--line-soft)",borderRadius:10,marginBottom:8,display:"flex",alignItems:"center",gap:12}},
+h("div",{style:{width:36,height:36,borderRadius:"50%",background:u.role==="admin"?"var(--accent)":"var(--bg-card)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:14,fontWeight:700,color:u.role==="admin"?"#fff":"var(--text-dim)",flexShrink:0}},u.username.charAt(0).toUpperCase()),
+h("div",{style:{flex:1}},
+h("div",{style:{fontSize:13,fontWeight:600}},u.username),
+h("div",{style:{fontSize:10,color:u.role==="admin"?"var(--accent)":"var(--text-dim)",fontWeight:500}},u.role==="admin"?"Администратор":"Редактор")
+),
+h("div",{style:{display:"flex",gap:6}},
+h("button",{onClick:function(){resetPassword(u.id)},className:"btn-ghost",style:{padding:"5px 10px",fontSize:10}},"\u{1F511}"),
+u.role!=="admin"||usersList.filter(function(x){return x.role==="admin"}).length>1?h("button",{onClick:function(){deleteUser(u.id,u.username)},className:"btn-ghost",style:{padding:"5px 10px",fontSize:10,color:"var(--danger)"}},"\u2715"):null
+)
+);
+})
+)
+)
+):null,
 digestPicker?h("div",{className:"modal-backdrop",onClick:function(e){if(e.target===e.currentTarget)setDigestPicker(null)}},
 h("div",{className:"modal",style:{maxWidth:560}},
 h("div",{className:"modal-head"},
@@ -1501,7 +1565,8 @@ h("button",{onClick:openCalendar,className:"header-btn"},"\u{1F4C5} Календ
 h("button",{onClick:openMembers,className:"header-btn",style:upcomingBday.some(function(m){return isBdayToday(m.birthday)})?{color:"#fff",background:"var(--accent)",borderColor:"var(--accent)",fontWeight:600}:{}},"\u{1F465} Клуб"+(upcomingBday.length>0?" \u{1F382}":"")),
 h("button",{onClick:openStats,className:"header-btn"},"\u{1F4CA} Статистика"),
 h("button",{onClick:openHistory,className:"header-btn"},"История"),
-h("button",{onClick:logout,className:"header-btn"},"Выйти")
+userRole==="admin"?h("button",{onClick:openUsers,className:"header-btn"},"\u{1F465} Пользователи"):null,
+h("button",{onClick:logout,className:"header-btn"},"\u{1F6AA} Выйти")
 )
 ),
 h("div",{className:"body"},

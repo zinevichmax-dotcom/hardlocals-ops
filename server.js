@@ -304,6 +304,19 @@ if (!adminExists) {
   console.log(`Admin user "${ADMIN_USER}" created`);
 }
 
+// Migration: add role column
+try {
+  const userCols = db.prepare("PRAGMA table_info(users)").all();
+  if (!userCols.find(c => c.name === 'role')) {
+    db.exec("ALTER TABLE users ADD COLUMN role TEXT DEFAULT 'editor'");
+    db.prepare("UPDATE users SET role = 'admin' WHERE username = ?").run(ADMIN_USER);
+    console.log('Migration: added role to users');
+  }
+} catch (e) { console.error('Role migration:', e.message); }
+
+// Ensure admin has admin role
+db.prepare("UPDATE users SET role = 'admin' WHERE username = ?").run(ADMIN_USER);
+
 // ═══════ AUTH ═══════
 function auth(req, res, next) {
   const token = req.headers.authorization?.replace('Bearer ', '');
@@ -316,18 +329,59 @@ function auth(req, res, next) {
   }
 }
 
+function adminOnly(req, res, next) {
+  if (req.user.role !== 'admin') return res.status(403).json({ error: 'Admin only' });
+  next();
+}
+
 app.post('/api/auth/login', (req, res) => {
   const { username, password } = req.body;
   const user = db.prepare('SELECT * FROM users WHERE username = ?').get(username);
   if (!user || !bcrypt.compareSync(password, user.password)) {
     return res.status(401).json({ error: 'Invalid credentials' });
   }
-  const token = jwt.sign({ id: user.id, username: user.username }, JWT_SECRET, { expiresIn: '30d' });
-  res.json({ token, username: user.username });
+  const token = jwt.sign({ id: user.id, username: user.username, role: user.role || 'editor' }, JWT_SECRET, { expiresIn: '30d' });
+  res.json({ token, username: user.username, role: user.role || 'editor' });
 });
 
 app.post('/api/auth/check', auth, (req, res) => {
-  res.json({ ok: true, username: req.user.username });
+  const user = db.prepare('SELECT id, username, role FROM users WHERE id = ?').get(req.user.id);
+  res.json({ ok: true, username: user?.username || req.user.username, role: user?.role || 'editor' });
+});
+
+// ═══════ USER MANAGEMENT (admin only) ═══════
+app.get('/api/users', auth, adminOnly, (req, res) => {
+  const users = db.prepare('SELECT id, username, role, created_at FROM users ORDER BY created_at').all();
+  res.json(users);
+});
+
+app.post('/api/users', auth, adminOnly, (req, res) => {
+  const { username, password, role } = req.body;
+  if (!username || !password) return res.status(400).json({ error: 'Username and password required' });
+  const exists = db.prepare('SELECT id FROM users WHERE username = ?').get(username);
+  if (exists) return res.status(400).json({ error: 'User already exists' });
+  const hash = bcrypt.hashSync(password, 10);
+  const r = db.prepare('INSERT INTO users (username, password, role) VALUES (?, ?, ?)').run(username, hash, role || 'editor');
+  console.log(`[USERS] Created: ${username} (${role || 'editor'})`);
+  res.json({ ok: true, id: r.lastInsertRowid });
+});
+
+app.delete('/api/users/:id', auth, adminOnly, (req, res) => {
+  const id = parseInt(req.params.id);
+  const user = db.prepare('SELECT username FROM users WHERE id = ?').get(id);
+  if (user?.username === ADMIN_USER) return res.status(400).json({ error: 'Cannot delete main admin' });
+  db.prepare('DELETE FROM users WHERE id = ?').run(id);
+  console.log(`[USERS] Deleted: ${user?.username}`);
+  res.json({ ok: true });
+});
+
+app.put('/api/users/:id/password', auth, adminOnly, (req, res) => {
+  const id = parseInt(req.params.id);
+  const { password } = req.body;
+  if (!password) return res.status(400).json({ error: 'Password required' });
+  const hash = bcrypt.hashSync(password, 10);
+  db.prepare('UPDATE users SET password = ? WHERE id = ?').run(hash, id);
+  res.json({ ok: true });
 });
 
 // ═══════ CLAUDE PROXY ═══════
@@ -1789,7 +1843,7 @@ app.get('*', (req, res) => {
 });
 
 app.listen(PORT, '0.0.0.0', () => {
-  console.log(`\n  Hard Locals Content Ops v10.5 (auto-approve from editor + meme browser)`);
+  console.log(`\n  Hard Locals Content Ops v11.0 (multi-user: admin/editor roles)`);
   console.log(`  → http://0.0.0.0:${PORT}`);
   console.log(`  → Anthropic: ${ANTHROPIC_API_KEY ? '✓' : '✗'}`);
   console.log(`  → TG Bot: ${TG_BOT_TOKEN ? '✓' : '✗'}`);
