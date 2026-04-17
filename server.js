@@ -1580,7 +1580,7 @@ app.post('/api/scheduled/batch-generate', auth, async (req, res) => {
         body: JSON.stringify({
           model: 'claude-sonnet-4-20250514',
           max_tokens: 600,
-          system: 'Ты копирайтер мотоклуба Hard Locals (Москва). Коротко, по-мужски, на "ты". HTML для Telegram (<b>, <i>, <a href>). Без markdown. Без хэштегов.',
+          system: 'Ты копирайтер мотоклуба Hard Locals (Москва). Мотоклуб новой формации — про людей, атмосферу, дорогу. ГОЛОС: тёплый, мужской, прямой. Без агрессии и пафоса. Как разговор между своими. На ты. Короткие предложения. Макс 2 эмодзи. ПРИМЕРЫ ТОНА: ДА — «Сезон не начинается в мае. Он начинается когда решаешь, что хватит ждать.» ДА — «Бафф, худи, стикер на бак. Мелочи, по которым мы узнаём своих.» НЕТ — «Дорогие друзья! Рады сообщить...» ЗАПРЕЩЕНО: друзья!, внимание!, КАПС, хэштеги, markdown, обращение на вы. ФОРМАТ: HTML для Telegram (<b>, <i>, <s>, <a href>). Абзацы через пустую строку. ОДИН пост. Без пояснений. Сразу текст.',
           messages: [{ role: 'user', content: prompt }],
         }),
       });
@@ -1943,7 +1943,7 @@ app.get('*', (req, res) => {
 });
 
 app.listen(PORT, '0.0.0.0', () => {
-  console.log(`\n  Hard Locals Content Ops v12.0 (UX polish: skeleton, formatting toolbar, inline URL, char count)`);
+  console.log(`\n  Hard Locals Content Ops v12.1 (brand voice + README + UX polish)`);
   console.log(`  → http://0.0.0.0:${PORT}`);
   console.log(`  → Anthropic: ${ANTHROPIC_API_KEY ? '✓' : '✗'}`);
   console.log(`  → TG Bot: ${TG_BOT_TOKEN ? '✓' : '✗'}`);
