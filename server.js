@@ -1488,24 +1488,24 @@ app.get('/api/shop', auth, (req, res) => {
 });
 
 // ═══════ HUMOR QUEUE ═══════
-const HUMOR_CHANNELS = ['motomoskva_pro', 'moto_tm'];
-const HUMOR_SUBREDDITS = ['motorcyclememes', 'CalamariRaceTeam', 'motorcycle', 'MotorcyclePorn', 'bikesgonewild'];
+const HUMOR_CHANNELS = ['motomoskva_pro', 'moto_tm', 'bikepostru', 'motobratia'];
+const HUMOR_SUBREDDITS = ['motorcyclememes', 'CalamariRaceTeam', 'motorcycle'];
 
 async function scrapeHumorChannels() {
-  console.log('[HUMOR] Scraping TG channels + Reddit');
+  console.log('[HUMOR] Scraping TG channels + Reddit RSS');
   const existing = new Set(db.prepare("SELECT source_url FROM humor_queue").all().map(r => r.source_url));
   let added = 0;
 
   // TG channels
   for (const ch of HUMOR_CHANNELS) {
     try {
-      const res = await fetch(`https://t.me/s/${ch}`, { signal: AbortSignal.timeout(10000), headers: { 'User-Agent': 'Mozilla/5.0' } });
+      const res = await fetch(`https://t.me/s/${ch}`, { signal: AbortSignal.timeout(10000), headers: { 'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36' } });
       if (!res.ok) { console.log('[HUMOR] TG', ch, 'status', res.status); continue; }
       const html = await res.text();
 
       const msgRegex = /data-post="([^"]+)"[\s\S]*?<div class="tgme_widget_message_bubble">([\s\S]*?)<\/div>\s*<\/div>\s*<\/div>/gi;
       let m;
-      while ((m = msgRegex.exec(html)) !== null && added < 30) {
+      while ((m = msgRegex.exec(html)) !== null && added < 40) {
         const postId = m[1];
         const bubble = m[2];
         const sourceUrl = `https://t.me/${postId}`;
@@ -1538,60 +1538,76 @@ async function scrapeHumorChannels() {
     }
   }
 
-  // Reddit
+  // Reddit via RSS (bypasses 403 block on JSON API)
   for (const sub of HUMOR_SUBREDDITS) {
     try {
-      const res = await fetch(`https://www.reddit.com/r/${sub}/hot/.json?limit=25`, {
+      const res = await fetch(`https://old.reddit.com/r/${sub}/hot/.json?limit=25&raw_json=1`, {
         signal: AbortSignal.timeout(10000),
-        headers: { 'User-Agent': 'HardLocalsBot/1.0' }
+        headers: { 'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36' }
       });
-      if (!res.ok) { console.log('[HUMOR] Reddit', sub, 'status', res.status); continue; }
+      if (!res.ok) {
+        console.log('[HUMOR] Reddit', sub, 'JSON status', res.status, '- trying RSS...');
+        // Fallback to RSS
+        const rssRes = await fetch(`https://www.reddit.com/r/${sub}/hot.rss?limit=20`, {
+          signal: AbortSignal.timeout(10000),
+          headers: { 'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36' }
+        });
+        if (!rssRes.ok) { console.log('[HUMOR] Reddit RSS', sub, 'status', rssRes.status); continue; }
+        const rssText = await rssRes.text();
+        // Parse RSS for image links
+        const entryRegex = /<entry>([\s\S]*?)<\/entry>/gi;
+        let em;
+        while ((em = entryRegex.exec(rssText)) !== null && added < 50) {
+          const entry = em[1];
+          const linkMatch = entry.match(/<link href="([^"]+)"/);
+          const titleMatch = entry.match(/<title>([^<]+)<\/title>/);
+          if (!linkMatch) continue;
+          const sourceUrl = linkMatch[1];
+          if (existing.has(sourceUrl)) continue;
+          // Find image in content
+          const imgInContent = entry.match(/href="(https:\/\/i\.redd\.it\/[^"]+)"/);
+          const imgInContent2 = entry.match(/src="(https:\/\/preview\.redd\.it\/[^"?]+)/);
+          const mediaUrl = imgInContent ? imgInContent[1] : (imgInContent2 ? imgInContent2[1] : null);
+          if (!mediaUrl) continue;
+          const text = titleMatch ? titleMatch[1].replace(/&amp;/g,'&').replace(/&lt;/g,'<').replace(/&gt;/g,'>') : '';
+          db.prepare('INSERT INTO humor_queue (source, source_url, text, media_url, media_type, status) VALUES (?, ?, ?, ?, ?, ?)')
+            .run('reddit:' + sub, sourceUrl, text, mediaUrl, 'image', 'pending');
+          existing.add(sourceUrl);
+          added++;
+        }
+        console.log('[HUMOR] Reddit RSS', sub, 'done');
+        continue;
+      }
       const data = await res.json();
       const posts = data?.data?.children || [];
 
       for (const post of posts) {
         const p = post.data;
-        if (!p || p.is_self) continue; // Skip text-only posts
+        if (!p || p.is_self) continue;
         const sourceUrl = `https://reddit.com${p.permalink}`;
         if (existing.has(sourceUrl)) continue;
 
         let mediaUrl = null;
         let mediaType = 'image';
-
-        // Image posts
-        if (p.url && p.url.match(/\.(jpg|jpeg|png|gif|webp)(\?.*)?$/i)) {
-          mediaUrl = p.url;
-        }
-        // Reddit hosted image
-        else if (p.url && p.url.includes('i.redd.it')) {
-          mediaUrl = p.url;
-        }
-        // Reddit hosted video
-        else if (p.is_video && p.media?.reddit_video?.fallback_url) {
-          mediaUrl = p.media.reddit_video.fallback_url;
-          mediaType = 'video';
-        }
-        // Imgur
-        else if (p.url && p.url.includes('imgur.com') && !p.url.includes('/a/')) {
-          mediaUrl = p.url.replace(/\/?$/, '.jpg');
-        }
-
+        if (p.url && p.url.match(/\.(jpg|jpeg|png|gif|webp)(\?.*)?$/i)) mediaUrl = p.url;
+        else if (p.url && p.url.includes('i.redd.it')) mediaUrl = p.url;
+        else if (p.is_video && p.media?.reddit_video?.fallback_url) { mediaUrl = p.media.reddit_video.fallback_url; mediaType = 'video'; }
+        else if (p.url && p.url.includes('imgur.com') && !p.url.includes('/a/')) mediaUrl = p.url.replace(/\/?$/, '.jpg');
         if (!mediaUrl) continue;
 
-        const text = p.title || '';
         db.prepare('INSERT INTO humor_queue (source, source_url, text, media_url, media_type, status) VALUES (?, ?, ?, ?, ?, ?)')
-          .run('reddit:' + sub, sourceUrl, text, mediaUrl, mediaType, 'pending');
+          .run('reddit:' + sub, sourceUrl, p.title || '', mediaUrl, mediaType, 'pending');
         existing.add(sourceUrl);
         added++;
-        if (added >= 40) break;
+        if (added >= 50) break;
       }
-      console.log('[HUMOR] Reddit', sub, '- done');
+      console.log('[HUMOR] Reddit JSON', sub, 'done');
     } catch (e) {
       console.error('[HUMOR] Reddit', sub, 'error:', e.message);
     }
   }
 
-  console.log(`[HUMOR] Added ${added} items to queue`);
+  console.log(`[HUMOR] Total added: ${added}`);
   return added;
 }
 
@@ -1730,7 +1746,7 @@ app.get('*', (req, res) => {
 });
 
 app.listen(PORT, '0.0.0.0', () => {
-  console.log(`\n  Hard Locals Content Ops v10.2 (memes inside humor rubric + Reddit sources)`);
+  console.log(`\n  Hard Locals Content Ops v10.3 (Reddit RSS fallback + browser UA + more TG channels)`);
   console.log(`  → http://0.0.0.0:${PORT}`);
   console.log(`  → Anthropic: ${ANTHROPIC_API_KEY ? '✓' : '✗'}`);
   console.log(`  → TG Bot: ${TG_BOT_TOKEN ? '✓' : '✗'}`);
