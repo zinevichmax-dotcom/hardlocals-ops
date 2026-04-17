@@ -1489,7 +1489,7 @@ app.get('/api/shop', auth, (req, res) => {
 
 // ═══════ HUMOR QUEUE ═══════
 const HUMOR_CHANNELS = ['motomoskva_pro', 'moto_tm'];
-const HUMOR_SUBREDDITS = ['motorcycle', 'motorcyclememes', 'CalamariRaceTeam'];
+const HUMOR_SUBREDDITS = ['motorcyclememes', 'CalamariRaceTeam', 'motorcycle', 'MotorcyclePorn', 'bikesgonewild'];
 
 async function scrapeHumorChannels() {
   console.log('[HUMOR] Scraping TG channels + Reddit');
@@ -1730,7 +1730,7 @@ app.get('*', (req, res) => {
 });
 
 app.listen(PORT, '0.0.0.0', () => {
-  console.log(`\n  Hard Locals Content Ops v10.1 (verified humor sources: TG + Reddit)`);
+  console.log(`\n  Hard Locals Content Ops v10.2 (memes inside humor rubric + Reddit sources)`);
   console.log(`  → http://0.0.0.0:${PORT}`);
   console.log(`  → Anthropic: ${ANTHROPIC_API_KEY ? '✓' : '✗'}`);
   console.log(`  → TG Bot: ${TG_BOT_TOKEN ? '✓' : '✗'}`);

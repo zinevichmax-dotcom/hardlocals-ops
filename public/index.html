@@ -681,7 +681,7 @@ if(r.token){localStorage.setItem("token",r.token);setToken(r.token);setAuthed(tr
 setLoginB(false);
 }).catch(function(e){setLoginE(String(e.message||e));setLoginB(false)})}
 
-function pickRubric(id){setSel(id);setFields({});setText("");setError("");setPostMsg("");setBlocks(null);setBanner(null);setBannerOpen(false);setImgSearch(false);setAttachedMediaList([]);setPendingDraftId(null);loadTemplates(id);if(window.innerWidth<768)setSidebar(false)}
+function pickRubric(id){setSel(id);setFields({});setText("");setError("");setPostMsg("");setBlocks(null);setBanner(null);setBannerOpen(false);setImgSearch(false);setAttachedMediaList([]);setPendingDraftId(null);loadTemplates(id);if(window.innerWidth<768)setSidebar(false);if(id==="humor")loadHumorQueue()}
 
 function loadTemplates(rubric){
 fetch("/api/templates?rubric="+encodeURIComponent(rubric),{headers:{Authorization:"Bearer "+token}}).then(function(r){return r.json()}).then(function(d){setTemplates(Array.isArray(d)?d:[])}).catch(function(){setTemplates([])});
@@ -1232,40 +1232,6 @@ h("div",{style:{fontSize:10,color:"var(--text-dim)",marginTop:2}},p.platform)
 return h("div",{className:"app"},
 historyModal,
 statsModal,
-humorOpen?h("div",{className:"modal-backdrop",onClick:function(e){if(e.target===e.currentTarget)setHumorOpen(false)}},
-h("div",{className:"modal",style:{maxWidth:800}},
-h("div",{className:"modal-head"},
-h("div",null,h("div",{className:"modal-title"},"\u{1F602} Очередь мото-юмора"),h("div",{className:"modal-sub"},humorQueue.length+" мемов в очереди")),
-h("div",{style:{display:"flex",gap:6}},
-h("button",{onClick:refreshHumor,disabled:humorLoading,className:"btn-primary accent",style:{padding:"7px 14px",fontSize:11}},humorLoading?"\u23F3 Ищу...":"\u{1F50D} Найти мемы"),
-h("button",{onClick:function(){setHumorOpen(false)},className:"btn-ghost"},"Закрыть")
-)
-),
-h("div",{className:"modal-body"},
-humorQueue.length===0?h("div",{style:{textAlign:"center",padding:40,color:"var(--text-dim)"}},
-h("div",{style:{fontSize:40,marginBottom:12}},"\u{1F50D}"),
-h("div",{style:{fontSize:14,marginBottom:8}},"Очередь пуста"),
-h("div",{style:{fontSize:12}},"Нажми «Найти мемы» чтобы загрузить из TG каналов")
-):
-h("div",{style:{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(220px,1fr))",gap:12}},humorQueue.map(function(item){
-return h("div",{key:item.id,style:{background:"var(--bg-elev)",border:"1px solid var(--line-soft)",borderRadius:10,overflow:"hidden",display:"flex",flexDirection:"column"}},
-item.media_url?h("div",{style:{height:180,background:"var(--bg)",overflow:"hidden"}},
-item.media_type==="video"?h("video",{src:item.media_url,style:{width:"100%",height:"100%",objectFit:"cover"},muted:true,playsInline:true,onMouseOver:function(e){e.target.play()},onMouseOut:function(e){e.target.pause()}}):
-h("img",{src:item.media_url,style:{width:"100%",height:"100%",objectFit:"cover"},loading:"lazy"})
-):null,
-h("div",{style:{padding:10,flex:1}},
-item.text?h("div",{style:{fontSize:11,lineHeight:1.4,color:"var(--text)",maxHeight:60,overflow:"hidden",marginBottom:8}},item.text.slice(0,120)+(item.text.length>120?"...":"")):null,
-h("div",{style:{fontSize:9,color:"var(--text-dim)",marginBottom:8}},item.source+" · "+new Date(item.created_at).toLocaleDateString("ru"))
-),
-h("div",{style:{display:"flex",borderTop:"1px solid var(--line-soft)"}},
-h("button",{onClick:function(){approveHumor(item)},style:{flex:1,padding:10,background:"rgba(74,222,128,0.08)",border:"none",color:"#4ade80",fontSize:11,fontWeight:600,cursor:"pointer"}},"\u2705 В пост"),
-h("button",{onClick:function(){rejectHumor(item)},style:{flex:1,padding:10,background:"rgba(239,68,68,0.05)",border:"none",borderLeft:"1px solid var(--line-soft)",color:"var(--text-dim)",fontSize:11,cursor:"pointer"}},"\u274C Скип")
-)
-);
-}))
-)
-)
-):null,
 digestPicker?h("div",{className:"modal-backdrop",onClick:function(e){if(e.target===e.currentTarget)setDigestPicker(null)}},
 h("div",{className:"modal",style:{maxWidth:560}},
 h("div",{className:"modal-head"},
@@ -1534,7 +1500,6 @@ h("div",{className:"status-pill"},h("span",{className:"status-dot"}),h("span",{c
 h("button",{onClick:openCalendar,className:"header-btn"},"\u{1F4C5} Календарь"),
 h("button",{onClick:openMembers,className:"header-btn",style:upcomingBday.some(function(m){return isBdayToday(m.birthday)})?{color:"#fff",background:"var(--accent)",borderColor:"var(--accent)",fontWeight:600}:{}},"\u{1F465} Клуб"+(upcomingBday.length>0?" \u{1F382}":"")),
 h("button",{onClick:openStats,className:"header-btn"},"\u{1F4CA} Статистика"),
-h("button",{onClick:openHumor,className:"header-btn"},"\u{1F602} Юмор"),
 h("button",{onClick:openHistory,className:"header-btn"},"История"),
 h("button",{onClick:logout,className:"header-btn"},"Выйти")
 )
@@ -1776,6 +1741,39 @@ h("div",{className:"actions"},
 h("button",{onClick:generate,disabled:loading,className:"btn-primary accent"},loading?"Генерация...":"\u2728 Сгенерировать"),
 text?h("button",{onClick:generate,disabled:loading,className:"btn-secondary"},"\u21BB Ещё вариант"):null
 ),
+// MEME QUEUE (only for humor rubric)
+rub&&rub.id==="humor"?h("div",{style:{marginTop:24,background:"linear-gradient(180deg,var(--bg-card) 0%,var(--bg-elev) 100%)",border:"1px solid var(--line)",borderRadius:14,padding:20,overflow:"hidden"}},
+h("div",{style:{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16}},
+h("div",null,
+h("div",{style:{fontFamily:"var(--f-head)",fontSize:14,fontWeight:700}},"\u{1F602} Мемы из сети"),
+h("div",{style:{fontSize:11,color:"var(--text-dim)",marginTop:2}},humorQueue.length>0?humorQueue.length+" мемов найдено":"Нажми «Найти» чтобы загрузить мемы из TG и Reddit")
+),
+h("button",{onClick:function(){setHumorLoading(true);apiCall("/api/humor-queue/refresh",{},token).then(function(d){setHumorLoading(false);loadHumorQueue()}).catch(function(){setHumorLoading(false)})},disabled:humorLoading,className:"btn-primary accent",style:{padding:"9px 16px",fontSize:12}},humorLoading?"\u23F3 Ищу...":"\u{1F50D} Найти мемы")
+),
+humorQueue.length>0?h("div",{style:{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(180px,1fr))",gap:10,maxHeight:500,overflowY:"auto"}},humorQueue.map(function(item){
+return h("div",{key:item.id,style:{background:"var(--bg-elev)",border:"1px solid var(--line-soft)",borderRadius:10,overflow:"hidden"}},
+item.media_url?h("div",{style:{height:140,background:"var(--bg)",overflow:"hidden"}},
+item.media_type==="video"?h("video",{src:item.media_url,style:{width:"100%",height:"100%",objectFit:"cover"},muted:true,playsInline:true,onMouseOver:function(e){try{e.target.play()}catch(x){}},onMouseOut:function(e){try{e.target.pause()}catch(x){}}}):
+h("img",{src:item.media_url,style:{width:"100%",height:"100%",objectFit:"cover"},loading:"lazy"})
+):null,
+h("div",{style:{padding:8}},
+item.text?h("div",{style:{fontSize:10,lineHeight:1.3,color:"var(--text)",maxHeight:40,overflow:"hidden",marginBottom:6}},item.text.slice(0,80)):null,
+h("div",{style:{fontSize:9,color:"var(--text-dim)",marginBottom:8}},item.source)
+),
+h("div",{style:{display:"flex",borderTop:"1px solid var(--line-soft)"}},
+h("button",{onClick:function(){
+var mediaPath=item.media_path||item.media_url;
+if(mediaPath){
+addAttachedMedia({path:mediaPath,preview:item.media_url,name:"meme.jpg",type:item.media_type==="video"?"video":"image"});
+if(item.text)setText(item.text);
+apiCall("/api/humor-queue/"+item.id+"/reject",{},token).then(function(){loadHumorQueue()});
+}
+},style:{flex:1,padding:8,background:"rgba(74,222,128,0.08)",border:"none",color:"#4ade80",fontSize:10,fontWeight:600,cursor:"pointer"}},"\u{1F4CE} Взять"),
+h("button",{onClick:function(){apiCall("/api/humor-queue/"+item.id+"/reject",{},token).then(function(){loadHumorQueue()})},style:{flex:1,padding:8,background:"transparent",border:"none",borderLeft:"1px solid var(--line-soft)",color:"var(--text-dim)",fontSize:10,cursor:"pointer"}},"\u274C")
+)
+);
+})):null
+):null,
 error?h("div",{className:"error-box"},error):null,
 // RESULT
 text?h("div",{className:"result-card"},
