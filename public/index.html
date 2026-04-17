@@ -1648,18 +1648,33 @@ h("div",{style:{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:6},classN
 var days=[];
 var start=new Date(calendarWeekStart);
 var todayStr=fmtYMD(new Date());
-for(var i=0;i<28;i++){
-var d=new Date(start);d.setDate(start.getDate()+i);
+
+function findFreeSlot(dateStr){
+var existing=scheduled.filter(function(s){return s.scheduled_date===dateStr}).map(function(s){return s.scheduled_time||"10:00"}).sort();
+var slots=["09:00","10:00","11:00","12:00","13:00","14:00","15:00","16:00","17:00","18:00","19:00","20:00"];
+for(var si=0;si<slots.length;si++){
+var taken=false;
+for(var ei=0;ei<existing.length;ei++){
+var diff=Math.abs((parseInt(slots[si])*60+parseInt(slots[si].split(":")[1]))-(parseInt(existing[ei])*60+parseInt(existing[ei].split(":")[1])));
+if(diff<60)taken=true;
+}
+if(!taken)return slots[si];
+}
+return "21:00";
+}
+
+function makeCell(idx){
+var d=new Date(start);d.setDate(start.getDate()+idx);
 var ymd=fmtYMD(d);
 var dayPosts=scheduled.filter(function(s){return s.scheduled_date===ymd}).sort(function(a,b){return(a.scheduled_time||"").localeCompare(b.scheduled_time||"")});
 var isToday=ymd===todayStr;
 var isPast=ymd<todayStr;
 var dayName=["Пн","Вт","Ср","Чт","Пт","Сб","Вс"][(d.getDay()+6)%7];
-days.push(h("div",{key:i,style:{background:isToday?"rgba(232,93,31,0.08)":isPast?"rgba(0,0,0,0.2)":"var(--bg-elev)",border:"1px solid "+(isToday?"var(--accent)":"var(--line-soft)"),borderRadius:8,padding:8,minHeight:100,cursor:"pointer",display:"flex",flexDirection:"column",gap:4,opacity:isPast?0.5:1,transition:"background 0.2s"},
+return h("div",{key:idx,style:{background:isToday?"rgba(232,93,31,0.08)":isPast?"rgba(0,0,0,0.2)":"var(--bg-elev)",border:"1px solid "+(isToday?"var(--accent)":"var(--line-soft)"),borderRadius:8,padding:8,minHeight:100,cursor:"pointer",display:"flex",flexDirection:"column",gap:4,opacity:isPast?0.5:1,transition:"background 0.2s"},
 onDragOver:function(ev){ev.preventDefault();ev.currentTarget.style.background="rgba(232,93,31,0.15)"},
 onDragLeave:function(ev){ev.currentTarget.style.background=isToday?"rgba(232,93,31,0.08)":"var(--bg-elev)"},
-onDrop:function(ev){ev.preventDefault();ev.currentTarget.style.background=isToday?"rgba(232,93,31,0.08)":"var(--bg-elev)";var pid=ev.dataTransfer.getData("text/plain");if(pid){fetch("/api/scheduled/"+pid+"/content",{method:"POST",headers:{"Content-Type":"application/json",Authorization:"Bearer "+token},body:JSON.stringify({scheduled_date:ymd})}).then(function(){loadScheduled()})}},
-onClick:function(ev){if(ev.target===ev.currentTarget||ev.target.classList.contains("day-header")){setScheduledEdit({scheduled_date:ymd,scheduled_time:"10:00",rubric:"",title:"",notes:"",status:"draft"})}}},
+onDrop:function(ev){ev.preventDefault();ev.currentTarget.style.background="";var pid=ev.dataTransfer.getData("text/plain");if(pid){var newTime=findFreeSlot(ymd);apiCall("/api/scheduled/"+pid+"/content",{scheduled_date:ymd,scheduled_time:newTime},token).then(function(){loadScheduled();toast("Перемещено на "+ymd+" "+newTime,"ok")})}},
+onClick:function(ev){if(ev.target===ev.currentTarget||ev.target.classList.contains("day-header")){setScheduledEdit({scheduled_date:ymd,scheduled_time:findFreeSlot(ymd),rubric:"",title:"",notes:"",status:"draft"})}}},
 h("div",{className:"day-header",style:{fontSize:10,color:isToday?"var(--accent)":"var(--text-dim)",fontWeight:isToday?700:500,textTransform:"uppercase",letterSpacing:"0.05em",pointerEvents:"none"}},dayName+" \u00B7 "+d.getDate()+"."+((d.getMonth()+1)<10?"0":"")+(d.getMonth()+1)),
 dayPosts.map(function(p){var r=null;for(var j=0;j<RUBRICS.length;j++){if(RUBRICS[j].id===p.rubric)r=RUBRICS[j]}
 var statusColors={draft:"var(--line)",ready:"rgba(74,222,128,0.5)",sent:"rgba(74,222,128,0.8)",sending:"var(--accent)",error:"var(--danger)"};
@@ -1676,8 +1691,9 @@ st!=="sent"?h("button",{onClick:function(e){e.stopPropagation();deleteScheduled(
 );
 }),
 dayPosts.length===0?h("div",{className:"day-header",style:{fontSize:9,color:"var(--text-dim)",opacity:0.4,pointerEvents:"none"}},"\u2014"):null
-));
+);
 }
+for(var i=0;i<28;i++){days.push(makeCell(i))}
 return days;
 })()),
 h("div",{className:"status-legend"},

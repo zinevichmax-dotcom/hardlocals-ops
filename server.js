@@ -2025,16 +2025,26 @@ app.post('/api/scheduled/create-birthday', auth, async (req, res) => {
     content = `<b>${member.nickname || member.name}, с днём рождения!</b>\n\nЧтобы дорога всегда была ровной, ветер — попутным, а бак — полным. Хорошего сезона! 🏍`;
   }
 
-  // Smart time: if birthday is today and time already passed, use next hour
+  // Smart time: find free slot with 1h gap
   const now = new Date();
   const todayStr = fmtLocal(now);
   let finalDate = scheduled_date || todayStr;
-  let finalTime = scheduled_time || '09:00';
-  if (finalDate === todayStr) {
-    const nextHour = now.getHours() + 1;
-    if (nextHour < 22) {
-      finalTime = String(nextHour).padStart(2, '0') + ':00';
+
+  // Find free slot
+  const existingTimes = db.prepare("SELECT scheduled_time FROM scheduled WHERE scheduled_date = ? AND status != 'sent'")
+    .all(finalDate).map(r => r.scheduled_time || '10:00');
+  const slots = ['09:00','10:00','11:00','12:00','13:00','14:00','15:00','16:00','17:00','18:00','19:00'];
+  let finalTime = '09:00';
+  for (const slot of slots) {
+    const slotMin = parseInt(slot) * 60 + parseInt(slot.split(':')[1]);
+    let free = true;
+    for (const ex of existingTimes) {
+      const exMin = parseInt(ex) * 60 + parseInt(ex.split(':')[1]);
+      if (Math.abs(slotMin - exMin) < 60) { free = false; break; }
     }
+    // If today, skip past times
+    if (finalDate === todayStr && slotMin <= now.getHours() * 60 + now.getMinutes()) continue;
+    if (free) { finalTime = slot; break; }
   }
 
   const title = 'ДР: ' + (member.nickname || member.name);
@@ -2117,7 +2127,7 @@ app.get('*', (req, res) => {
 });
 
 app.listen(PORT, '0.0.0.0', () => {
-  console.log(`\n  Hard Locals Content Ops v13.0 (auto birthday: text + photo + smart time)`);
+  console.log(`\n  Hard Locals Content Ops v13.1 (fix drag-drop closure + smart time slots)`);
   console.log(`  → http://0.0.0.0:${PORT}`);
   console.log(`  → Anthropic: ${ANTHROPIC_API_KEY ? '✓' : '✗'}`);
   console.log(`  → TG Bot: ${TG_BOT_TOKEN ? '✓' : '✗'}`);
