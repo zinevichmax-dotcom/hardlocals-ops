@@ -1962,12 +1962,12 @@ h("div",{className:"skeleton",style:{width:"100%",height:100,marginBottom:8}}),
 h("div",{style:{fontSize:11,color:"var(--text-dim)"}},"Загружаю фото из канала...")
 ):
 mediaBank.length===0?h("div",{style:{textAlign:"center",padding:20,color:"var(--text-dim)",fontSize:12}},"Фото не найдены. Нажми «Обновить»"):
-h("div",{className:"image-grid",style:{maxHeight:300,overflowY:"auto"}},mediaBank.map(function(img){
-return h("div",{key:img.id,className:"image-item",style:{cursor:"pointer"},onClick:function(){
+h("div",{style:{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(140px,1fr))",gap:6,maxHeight:350,overflowY:"auto"}},mediaBank.map(function(img){
+return h("div",{key:img.id,style:{borderRadius:8,overflow:"hidden",cursor:"pointer",border:"1px solid var(--line-soft)",transition:"all 0.15s",position:"relative"},onClick:function(){
 addAttachedMedia({path:img.media_url,preview:img.media_url,name:"club-photo.jpg",type:"image"});
 toast("Фото прикреплено","ok");
-}},
-h("img",{src:img.media_url,loading:"lazy",style:{width:"100%",height:"100%",objectFit:"cover"}}),
+},onMouseOver:function(e){e.currentTarget.style.borderColor="var(--accent)"},onMouseOut:function(e){e.currentTarget.style.borderColor="var(--line-soft)"}},
+h("img",{src:img.media_url,loading:"lazy",style:{width:"100%",display:"block"}}),
 img.caption?h("div",{style:{position:"absolute",bottom:0,left:0,right:0,padding:"4px 6px",background:"rgba(0,0,0,0.7)",fontSize:9,color:"#fff",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}},img.caption.slice(0,50)):null
 );
 }))
@@ -2113,8 +2113,8 @@ h("div",{className:"post-row"},
 pendingDraftId&&text?h("button",{onClick:saveDraftToCalendar,className:"post-btn",style:{color:"#4ade80",borderColor:"rgba(74,222,128,0.4)",background:"rgba(74,222,128,0.08)",fontWeight:700}},"\u{1F4BE} В календарь"):null,
 !pendingDraftId&&text&&!scheduleForm?h("button",{onClick:scheduleFromEditor,className:"post-btn",style:{color:"#4ade80",borderColor:"rgba(74,222,128,0.4)",background:"rgba(74,222,128,0.08)"}},"\u{1F4C5} Запланировать"):null,
 scheduleForm?h("div",{style:{display:"flex",alignItems:"center",gap:8,padding:"4px 0",flex:"1 0 100%"}},
-h("input",{type:"date",className:"input",value:scheduleForm.date,onChange:function(e){setScheduleForm(Object.assign({},scheduleForm,{date:e.target.value}))},style:{width:160,padding:"10px 12px"}}),
-h("input",{type:"time",className:"input",value:scheduleForm.time,onChange:function(e){setScheduleForm(Object.assign({},scheduleForm,{time:e.target.value}))},style:{width:120,padding:"10px 12px"}}),
+h("input",{type:"date",className:"input",value:scheduleForm.date,onChange:function(e){setScheduleForm(function(prev){return{date:e.target.value,time:prev.time}})},style:{width:160,padding:"10px 12px"}}),
+h("input",{type:"time",className:"input",value:scheduleForm.time,onChange:function(e){setScheduleForm(function(prev){return{date:prev.date,time:e.target.value}})},style:{width:120,padding:"10px 12px"}}),
 h("button",{onClick:submitScheduleForm,className:"post-btn",style:{color:"#4ade80",borderColor:"rgba(74,222,128,0.4)",background:"rgba(74,222,128,0.15)",fontWeight:700}},"\u2705 Запланировать"),
 h("button",{onClick:function(){setScheduleForm(null)},className:"post-btn",style:{color:"var(--text-dim)",borderColor:"var(--line-soft)"}},"\u2715")
 ):null,

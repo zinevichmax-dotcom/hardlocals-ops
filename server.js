@@ -1892,44 +1892,48 @@ async function scrapeMediaBank() {
 
   for (const ch of MEDIA_BANK_CHANNELS) {
     try {
-      const res = await fetch(`https://t.me/s/${ch}`, {
-        signal: AbortSignal.timeout(15000),
-        headers: { 'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36' }
-      });
-      if (!res.ok) { console.log('[MEDIA]', ch, 'status', res.status); continue; }
-      const html = await res.text();
+      // Fetch multiple pages
+      let urls = [`https://t.me/s/${ch}`];
+      for (const pageUrl of urls) {
+        const res = await fetch(pageUrl, {
+          signal: AbortSignal.timeout(15000),
+          headers: { 'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36' }
+        });
+        if (!res.ok) { console.log('[MEDIA]', ch, 'status', res.status); continue; }
+        const html = await res.text();
 
-      // Extract all posts with photos
-      const postRegex = /data-post="([^"]+)"([\s\S]*?)(?=data-post="|$)/gi;
-      let m;
-      while ((m = postRegex.exec(html)) !== null) {
-        const postId = m[1];
-        const block = m[2];
-        const sourceUrl = `https://t.me/${postId}`;
-        if (existing.has(sourceUrl)) continue;
+        // Find all photo wraps (individual photos, not collages)
+        const photoRegex = /tgme_widget_message_photo_wrap[^>]*style="[^"]*background-image:url\('([^']+)'\)/g;
+        let m;
+        while ((m = photoRegex.exec(html)) !== null) {
+          const mediaUrl = m[1];
+          // Skip small images (emojis, avatars, stickers)
+          if (mediaUrl.includes('/emoji/') || mediaUrl.includes('/userpic/') || mediaUrl.includes('/sticker/')) continue;
+          if (mediaUrl.length < 50) continue;
 
-        // Find all images in this post
-        const imgRegex = /background-image:url\('([^']+)'\)/g;
-        let imgMatch;
-        while ((imgMatch = imgRegex.exec(block)) !== null) {
-          const mediaUrl = imgMatch[1];
-          if (mediaUrl.includes('/emoji/') || mediaUrl.includes('/userpic/')) continue;
+          const uniqueKey = 'tg:' + ch + ':' + mediaUrl.slice(-40);
+          if (existing.has(uniqueKey)) continue;
 
-          // Extract caption
+          // Find post context for caption
+          const urlIdx = html.indexOf(mediaUrl);
+          const blockStart = html.lastIndexOf('data-post="', urlIdx);
+          let postId = '';
+          if (blockStart > -1) {
+            const postMatch = html.substring(blockStart).match(/data-post="([^"]+)"/);
+            if (postMatch) postId = postMatch[1];
+          }
           let caption = '';
-          const textMatch = block.match(/<div class="tgme_widget_message_text[^"]*"[^>]*>([\s\S]*?)<\/div>/);
-          if (textMatch) caption = textMatch[1].replace(/<br\s*\/?>/g, ' ').replace(/<[^>]*>/g, '').trim().slice(0, 200);
-
-          const imgUrl = sourceUrl + '#' + (added);
-          if (existing.has(imgUrl)) continue;
+          const nearbyText = html.substring(urlIdx, urlIdx + 2000);
+          const captionMatch = nearbyText.match(/tgme_widget_message_text[^>]*>([\s\S]*?)<\/div>/);
+          if (captionMatch) caption = captionMatch[1].replace(/<br\s*\/?>/g, ' ').replace(/<[^>]*>/g, '').trim().slice(0, 200);
 
           db.prepare('INSERT OR IGNORE INTO media_bank (source, source_url, media_url, caption) VALUES (?, ?, ?, ?)')
-            .run('tg:' + ch, imgUrl, mediaUrl, caption || null);
-          existing.add(imgUrl);
+            .run('tg:' + ch, uniqueKey, mediaUrl, caption || null);
+          existing.add(uniqueKey);
           added++;
         }
       }
-      console.log('[MEDIA]', ch, 'done');
+      console.log('[MEDIA]', ch, 'done -', added, 'photos');
     } catch (e) {
       console.error('[MEDIA]', ch, 'error:', e.message);
     }
@@ -2020,7 +2024,7 @@ app.get('*', (req, res) => {
 });
 
 app.listen(PORT, '0.0.0.0', () => {
-  console.log(`\n  Hard Locals Content Ops v12.2 (media bank from TG channel @hardlocals)`);
+  console.log(`\n  Hard Locals Content Ops v12.3 (fix time picker + media bank photos)`);
   console.log(`  → http://0.0.0.0:${PORT}`);
   console.log(`  → Anthropic: ${ANTHROPIC_API_KEY ? '✓' : '✗'}`);
   console.log(`  → TG Bot: ${TG_BOT_TOKEN ? '✓' : '✗'}`);
