@@ -799,7 +799,7 @@ if(r.token){localStorage.setItem("token",r.token);setToken(r.token);setAuthed(tr
 setLoginB(false);
 }).catch(function(e){setLoginE(String(e.message||e));setLoginB(false)})}
 
-function pickRubric(id){setSel(id);setFields({});setText("");setError("");setPostMsg("");setBlocks(null);setBanner(null);setBannerOpen(false);setImgSearch(false);setAttachedMediaList([]);setPendingDraftId(null);loadTemplates(id);if(window.innerWidth<768)setSidebar(false);if(id==="humor")loadHumorQueue()}
+function pickRubric(id){setSel(id);setFields({});setText("");setError("");setPostMsg("");setBlocks(null);setBanner(null);setBannerOpen(false);setBannerPhoto("");setImgSearch(false);setAttachedMediaList([]);setPendingDraftId(null);setScheduleForm(null);setMediaBankOpen(false);loadTemplates(id);if(window.innerWidth<768)setSidebar(false);if(id==="humor")loadHumorQueue()}
 
 function loadTemplates(rubric){
 fetch("/api/templates?rubric="+encodeURIComponent(rubric),{headers:{Authorization:"Bearer "+token}}).then(function(r){return r.json()}).then(function(d){setTemplates(Array.isArray(d)?d:[])}).catch(function(){setTemplates([])});
@@ -2049,6 +2049,11 @@ h("div",{className:"work-inner"},
 h("div",{style:{marginBottom:24}},
 h("div",{style:{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}},
 h("button",{onClick:function(){setBannerOpen(!bannerOpen);setImgSearch(false);setMediaBankOpen(false);if(!bannerOpen&&mediaBank.length===0)loadMediaBank();
+// Auto-pick attached media as banner source
+if(!bannerOpen&&!bannerPhoto&&attachedMediaList&&attachedMediaList.length>0){
+var firstImg=attachedMediaList[0];
+if(firstImg&&firstImg.type!=="video"){setBannerPhoto(firstImg.preview||firstImg.path)}
+}
 // Auto-fill banner text based on rubric
 if(!bannerOpen&&rub){
 var autoText="";
