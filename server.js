@@ -1489,7 +1489,14 @@ app.get('/api/shop', auth, (req, res) => {
 
 // ═══════ HUMOR QUEUE ═══════
 const HUMOR_CHANNELS = ['motomoskva_pro', 'moto_tm', 'bikepostru', 'motobratia'];
-const HUMOR_SUBREDDITS = ['motorcyclememes', 'CalamariRaceTeam', 'motorcycle'];
+const HUMOR_SUBREDDITS = ['motorcyclememes', 'CalamariRaceTeam'];
+const HUMOR_BROWSE_LINKS = [
+  { name: 'r/motorcyclememes', url: 'https://www.reddit.com/r/motorcyclememes/hot/' },
+  { name: 'r/CalamariRaceTeam', url: 'https://www.reddit.com/r/CalamariRaceTeam/hot/' },
+  { name: 'МотоМосква TG', url: 'https://t.me/s/motomoskva_pro' },
+  { name: '9GAG moto', url: 'https://9gag.com/search?query=motorcycle+meme' },
+  { name: 'Pikabu мото', url: 'https://pikabu.ru/tag/мото/hot' },
+];
 
 async function scrapeHumorChannels() {
   console.log('[HUMOR] Scraping TG channels + Reddit RSS');
@@ -1642,6 +1649,39 @@ app.get('/api/humor-queue', auth, (req, res) => {
   res.json(items);
 });
 
+app.get('/api/humor-links', auth, (req, res) => {
+  res.json(HUMOR_BROWSE_LINKS);
+});
+
+// Manual import: operator pastes image/video URL
+app.post('/api/humor-queue/import', auth, async (req, res) => {
+  const { url, text } = req.body;
+  if (!url) return res.status(400).json({ error: 'URL required' });
+
+  const isVideo = url.match(/\.(mp4|webm|mov)(\?.*)?$/i);
+  const mediaType = isVideo ? 'video' : 'image';
+
+  // Download media
+  try {
+    const ext = isVideo ? 'mp4' : 'jpg';
+    const filename = `humor-import-${Date.now()}.${ext}`;
+    const filePath = join(__dirname, 'uploads', filename);
+    const fetchRes = await fetch(url, { signal: AbortSignal.timeout(30000), headers: { 'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36' } });
+    if (!fetchRes.ok) return res.status(400).json({ error: 'Не удалось скачать: ' + fetchRes.status });
+    const buffer = Buffer.from(await fetchRes.arrayBuffer());
+    writeFileSync(filePath, buffer);
+    const mediaPath = `/uploads/${filename}`;
+
+    db.prepare('INSERT INTO humor_queue (source, source_url, text, media_url, media_path, media_type, status) VALUES (?, ?, ?, ?, ?, ?, ?)')
+      .run('import', url, text || null, url, mediaPath, mediaType, 'pending');
+
+    console.log(`[HUMOR] Imported: ${Math.round(buffer.length / 1024)}KB`);
+    res.json({ ok: true, path: mediaPath });
+  } catch (e) {
+    res.status(400).json({ error: 'Ошибка: ' + e.message });
+  }
+});
+
 app.post('/api/humor-queue/refresh', auth, async (req, res) => {
   const added = await scrapeHumorChannels();
   res.json({ ok: true, added });
@@ -1746,7 +1786,7 @@ app.get('*', (req, res) => {
 });
 
 app.listen(PORT, '0.0.0.0', () => {
-  console.log(`\n  Hard Locals Content Ops v10.3 (Reddit RSS fallback + browser UA + more TG channels)`);
+  console.log(`\n  Hard Locals Content Ops v10.4 (meme browser + URL import + curated sources)`);
   console.log(`  → http://0.0.0.0:${PORT}`);
   console.log(`  → Anthropic: ${ANTHROPIC_API_KEY ? '✓' : '✗'}`);
   console.log(`  → TG Bot: ${TG_BOT_TOKEN ? '✓' : '✗'}`);

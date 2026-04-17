@@ -1742,34 +1742,40 @@ h("button",{onClick:generate,disabled:loading,className:"btn-primary accent"},lo
 text?h("button",{onClick:generate,disabled:loading,className:"btn-secondary"},"\u21BB Ещё вариант"):null
 ),
 // MEME QUEUE (only for humor rubric)
-rub&&rub.id==="humor"?h("div",{style:{marginTop:24,background:"linear-gradient(180deg,var(--bg-card) 0%,var(--bg-elev) 100%)",border:"1px solid var(--line)",borderRadius:14,padding:20,overflow:"hidden"}},
-h("div",{style:{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16}},
-h("div",null,
-h("div",{style:{fontFamily:"var(--f-head)",fontSize:14,fontWeight:700}},"\u{1F602} Мемы из сети"),
-h("div",{style:{fontSize:11,color:"var(--text-dim)",marginTop:2}},humorQueue.length>0?humorQueue.length+" мемов найдено":"Нажми «Найти» чтобы загрузить мемы из TG и Reddit")
+rub&&rub.id==="humor"?h("div",{style:{marginTop:24,background:"linear-gradient(180deg,var(--bg-card) 0%,var(--bg-elev) 100%)",border:"1px solid var(--line)",borderRadius:14,padding:20}},
+h("div",{style:{fontFamily:"var(--f-head)",fontSize:14,fontWeight:700,marginBottom:4}},"\u{1F602} Мемы и контент"),
+h("div",{style:{fontSize:11,color:"var(--text-dim)",marginBottom:16}},"Открой источник → найди мем → скопируй URL картинки → вставь ниже"),
+h("div",{style:{display:"flex",gap:8,flexWrap:"wrap",marginBottom:16}},
+[{n:"r/motorcyclememes",u:"https://www.reddit.com/r/motorcyclememes/hot/"},{n:"r/CalamariRaceTeam",u:"https://www.reddit.com/r/CalamariRaceTeam/hot/"},{n:"9GAG moto",u:"https://9gag.com/search?query=motorcycle+meme"},{n:"Pikabu мото",u:"https://pikabu.ru/tag/%D0%BC%D0%BE%D1%82%D0%BE/hot"},{n:"МотоМосква",u:"https://t.me/s/motomoskva_pro"}].map(function(link){
+return h("a",{key:link.n,href:link.u,target:"_blank",rel:"noopener",style:{padding:"6px 12px",background:"var(--bg)",border:"1px solid var(--line-soft)",borderRadius:6,fontSize:10,color:"var(--text-muted)",textDecoration:"none",display:"inline-flex",alignItems:"center",gap:4,transition:"all 0.2s"},onMouseOver:function(e){e.currentTarget.style.borderColor="var(--accent)";e.currentTarget.style.color="var(--accent)"},onMouseOut:function(e){e.currentTarget.style.borderColor="var(--line-soft)";e.currentTarget.style.color="var(--text-muted)"}},"\u{1F517} ",link.n);
+})
 ),
-h("button",{onClick:function(){setHumorLoading(true);apiCall("/api/humor-queue/refresh",{},token).then(function(d){setHumorLoading(false);loadHumorQueue()}).catch(function(){setHumorLoading(false)})},disabled:humorLoading,className:"btn-primary accent",style:{padding:"9px 16px",fontSize:12}},humorLoading?"\u23F3 Ищу...":"\u{1F50D} Найти мемы")
+h("div",{style:{display:"flex",gap:8,marginBottom:16}},
+h("input",{id:"humor-url-input",className:"input",placeholder:"URL картинки или видео (правый клик на меме → Копировать адрес изображения)",style:{flex:1}}),
+h("button",{onClick:function(){
+var el=document.getElementById("humor-url-input");var url=el.value.trim();
+if(!url){alert("Вставь URL");return}
+var isVideo=url.match(/\.(mp4|webm|mov)(\?.*)?$/i);
+addAttachedMedia({path:url,preview:url,name:url.split("/").pop()||"meme",type:isVideo?"video":"image"});
+el.value="";
+},className:"btn-primary accent",style:{padding:"12px 18px",fontSize:12,whiteSpace:"nowrap"}},"\u{1F4CE} Прикрепить")
 ),
-humorQueue.length>0?h("div",{style:{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(180px,1fr))",gap:10,maxHeight:500,overflowY:"auto"}},humorQueue.map(function(item){
-return h("div",{key:item.id,style:{background:"var(--bg-elev)",border:"1px solid var(--line-soft)",borderRadius:10,overflow:"hidden"}},
-item.media_url?h("div",{style:{height:140,background:"var(--bg)",overflow:"hidden"}},
-item.media_type==="video"?h("video",{src:item.media_url,style:{width:"100%",height:"100%",objectFit:"cover"},muted:true,playsInline:true,onMouseOver:function(e){try{e.target.play()}catch(x){}},onMouseOut:function(e){try{e.target.pause()}catch(x){}}}):
+h("div",{style:{display:"flex",alignItems:"center",justifyContent:"space-between",paddingTop:12,borderTop:"1px solid var(--line-soft)"}},
+h("div",{style:{fontSize:11,color:"var(--text-dim)"}},"Авто-подборка из TG каналов"+(humorQueue.length>0?" ("+humorQueue.length+")":"")),
+h("button",{onClick:function(){setHumorLoading(true);apiCall("/api/humor-queue/refresh",{},token).then(function(d){setHumorLoading(false);loadHumorQueue()}).catch(function(){setHumorLoading(false)})},disabled:humorLoading,className:"btn-ghost",style:{padding:"7px 14px",fontSize:11}},humorLoading?"\u23F3...":"\u{1F50D} Обновить")
+),
+humorQueue.length>0?h("div",{style:{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(160px,1fr))",gap:8,maxHeight:400,overflowY:"auto",marginTop:12}},humorQueue.map(function(item){
+return h("div",{key:item.id,style:{background:"var(--bg-elev)",border:"1px solid var(--line-soft)",borderRadius:8,overflow:"hidden"}},
+item.media_url?h("div",{style:{height:120,background:"var(--bg)",overflow:"hidden"}},
 h("img",{src:item.media_url,style:{width:"100%",height:"100%",objectFit:"cover"},loading:"lazy"})
 ):null,
-h("div",{style:{padding:8}},
-item.text?h("div",{style:{fontSize:10,lineHeight:1.3,color:"var(--text)",maxHeight:40,overflow:"hidden",marginBottom:6}},item.text.slice(0,80)):null,
-h("div",{style:{fontSize:9,color:"var(--text-dim)",marginBottom:8}},item.source)
-),
 h("div",{style:{display:"flex",borderTop:"1px solid var(--line-soft)"}},
 h("button",{onClick:function(){
-var mediaPath=item.media_path||item.media_url;
-if(mediaPath){
-addAttachedMedia({path:mediaPath,preview:item.media_url,name:"meme.jpg",type:item.media_type==="video"?"video":"image"});
+addAttachedMedia({path:item.media_path||item.media_url,preview:item.media_url,name:"meme.jpg",type:item.media_type==="video"?"video":"image"});
 if(item.text)setText(item.text);
 apiCall("/api/humor-queue/"+item.id+"/reject",{},token).then(function(){loadHumorQueue()});
-}
-},style:{flex:1,padding:8,background:"rgba(74,222,128,0.08)",border:"none",color:"#4ade80",fontSize:10,fontWeight:600,cursor:"pointer"}},"\u{1F4CE} Взять"),
-h("button",{onClick:function(){apiCall("/api/humor-queue/"+item.id+"/reject",{},token).then(function(){loadHumorQueue()})},style:{flex:1,padding:8,background:"transparent",border:"none",borderLeft:"1px solid var(--line-soft)",color:"var(--text-dim)",fontSize:10,cursor:"pointer"}},"\u274C")
+},style:{flex:1,padding:6,background:"rgba(74,222,128,0.08)",border:"none",color:"#4ade80",fontSize:10,fontWeight:600,cursor:"pointer"}},"\u{1F4CE}"),
+h("button",{onClick:function(){apiCall("/api/humor-queue/"+item.id+"/reject",{},token).then(function(){loadHumorQueue()})},style:{flex:1,padding:6,background:"transparent",border:"none",borderLeft:"1px solid var(--line-soft)",color:"var(--text-dim)",fontSize:10,cursor:"pointer"}},"\u274C")
 )
 );
 })):null
