@@ -421,6 +421,9 @@ var statsS=useS(null);
 var statsOpenS=useS(false);
 var pendingDraftIdS=useS(null);
 var batchGeneratingS=useS(false);
+var humorQueueS=useS([]);
+var humorOpenS=useS(false);
+var humorLoadingS=useS(false);
 var taR=useR(null);
 
 var token=tokenS[0],setToken=tokenS[1];
@@ -479,6 +482,9 @@ var stats=statsS[0],setStats=statsS[1];
 var statsOpen=statsOpenS[0],setStatsOpen=statsOpenS[1];
 var pendingDraftId=pendingDraftIdS[0],setPendingDraftId=pendingDraftIdS[1];
 var batchGenerating=batchGeneratingS[0],setBatchGenerating=batchGeneratingS[1];
+var humorQueue=humorQueueS[0],setHumorQueue=humorQueueS[1];
+var humorOpen=humorOpenS[0],setHumorOpen=humorOpenS[1];
+var humorLoading=humorLoadingS[0],setHumorLoading=humorLoadingS[1];
 
 var rub=null;
 for(var i=0;i<RUBRICS.length;i++){if(RUBRICS[i].id===sel)rub=RUBRICS[i]}
@@ -981,6 +987,29 @@ loadScheduled();
 });
 }
 
+function loadHumorQueue(){
+fetch("/api/humor-queue",{headers:{Authorization:"Bearer "+token}}).then(function(r){return r.json()}).then(function(d){setHumorQueue(Array.isArray(d)?d:[])});
+}
+function openHumor(){setHumorOpen(true);loadHumorQueue()}
+function refreshHumor(){
+setHumorLoading(true);
+apiCall("/api/humor-queue/refresh",{},token).then(function(d){
+setHumorLoading(false);
+loadHumorQueue();
+if(d.added===0)alert("Новых мемов не найдено. Попробуй позже.");
+}).catch(function(){setHumorLoading(false)});
+}
+function approveHumor(item){
+var date=prompt("На какую дату? (ГГГГ-ММ-ДД)",fmtYMD(new Date()));
+if(!date)return;
+var time=prompt("Время?","12:00");
+if(!time)return;
+apiCall("/api/humor-queue/"+item.id+"/approve",{scheduled_date:date,scheduled_time:time},token).then(function(){loadHumorQueue()});
+}
+function rejectHumor(item){
+apiCall("/api/humor-queue/"+item.id+"/reject",{},token).then(function(){loadHumorQueue()});
+}
+
 function approvePost(sched){
 // Change status to 'ready' — scheduler will auto-publish
 fetch("/api/scheduled/"+sched.id,{method:"PUT",headers:{"Content-Type":"application/json",Authorization:"Bearer "+token},body:JSON.stringify(Object.assign({},sched,{status:"ready",items:typeof sched.items==="string"?JSON.parse(sched.items||"[]"):(sched.items||[])}))}).then(function(){loadScheduled()});
@@ -1203,6 +1232,40 @@ h("div",{style:{fontSize:10,color:"var(--text-dim)",marginTop:2}},p.platform)
 return h("div",{className:"app"},
 historyModal,
 statsModal,
+humorOpen?h("div",{className:"modal-backdrop",onClick:function(e){if(e.target===e.currentTarget)setHumorOpen(false)}},
+h("div",{className:"modal",style:{maxWidth:800}},
+h("div",{className:"modal-head"},
+h("div",null,h("div",{className:"modal-title"},"\u{1F602} Очередь мото-юмора"),h("div",{className:"modal-sub"},humorQueue.length+" мемов в очереди")),
+h("div",{style:{display:"flex",gap:6}},
+h("button",{onClick:refreshHumor,disabled:humorLoading,className:"btn-primary accent",style:{padding:"7px 14px",fontSize:11}},humorLoading?"\u23F3 Ищу...":"\u{1F50D} Найти мемы"),
+h("button",{onClick:function(){setHumorOpen(false)},className:"btn-ghost"},"Закрыть")
+)
+),
+h("div",{className:"modal-body"},
+humorQueue.length===0?h("div",{style:{textAlign:"center",padding:40,color:"var(--text-dim)"}},
+h("div",{style:{fontSize:40,marginBottom:12}},"\u{1F50D}"),
+h("div",{style:{fontSize:14,marginBottom:8}},"Очередь пуста"),
+h("div",{style:{fontSize:12}},"Нажми «Найти мемы» чтобы загрузить из TG каналов")
+):
+h("div",{style:{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(220px,1fr))",gap:12}},humorQueue.map(function(item){
+return h("div",{key:item.id,style:{background:"var(--bg-elev)",border:"1px solid var(--line-soft)",borderRadius:10,overflow:"hidden",display:"flex",flexDirection:"column"}},
+item.media_url?h("div",{style:{height:180,background:"var(--bg)",overflow:"hidden"}},
+item.media_type==="video"?h("video",{src:item.media_url,style:{width:"100%",height:"100%",objectFit:"cover"},muted:true,playsInline:true,onMouseOver:function(e){e.target.play()},onMouseOut:function(e){e.target.pause()}}):
+h("img",{src:item.media_url,style:{width:"100%",height:"100%",objectFit:"cover"},loading:"lazy"})
+):null,
+h("div",{style:{padding:10,flex:1}},
+item.text?h("div",{style:{fontSize:11,lineHeight:1.4,color:"var(--text)",maxHeight:60,overflow:"hidden",marginBottom:8}},item.text.slice(0,120)+(item.text.length>120?"...":"")):null,
+h("div",{style:{fontSize:9,color:"var(--text-dim)",marginBottom:8}},item.source+" · "+new Date(item.created_at).toLocaleDateString("ru"))
+),
+h("div",{style:{display:"flex",borderTop:"1px solid var(--line-soft)"}},
+h("button",{onClick:function(){approveHumor(item)},style:{flex:1,padding:10,background:"rgba(74,222,128,0.08)",border:"none",color:"#4ade80",fontSize:11,fontWeight:600,cursor:"pointer"}},"\u2705 В пост"),
+h("button",{onClick:function(){rejectHumor(item)},style:{flex:1,padding:10,background:"rgba(239,68,68,0.05)",border:"none",borderLeft:"1px solid var(--line-soft)",color:"var(--text-dim)",fontSize:11,cursor:"pointer"}},"\u274C Скип")
+)
+);
+}))
+)
+)
+):null,
 digestPicker?h("div",{className:"modal-backdrop",onClick:function(e){if(e.target===e.currentTarget)setDigestPicker(null)}},
 h("div",{className:"modal",style:{maxWidth:560}},
 h("div",{className:"modal-head"},
@@ -1471,6 +1534,7 @@ h("div",{className:"status-pill"},h("span",{className:"status-dot"}),h("span",{c
 h("button",{onClick:openCalendar,className:"header-btn"},"\u{1F4C5} Календарь"),
 h("button",{onClick:openMembers,className:"header-btn",style:upcomingBday.some(function(m){return isBdayToday(m.birthday)})?{color:"#fff",background:"var(--accent)",borderColor:"var(--accent)",fontWeight:600}:{}},"\u{1F465} Клуб"+(upcomingBday.length>0?" \u{1F382}":"")),
 h("button",{onClick:openStats,className:"header-btn"},"\u{1F4CA} Статистика"),
+h("button",{onClick:openHumor,className:"header-btn"},"\u{1F602} Юмор"),
 h("button",{onClick:openHistory,className:"header-btn"},"История"),
 h("button",{onClick:logout,className:"header-btn"},"Выйти")
 )

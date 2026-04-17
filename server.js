@@ -3,7 +3,7 @@ import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
 import Database from 'better-sqlite3';
 import multer from 'multer';
-import { readFileSync, existsSync, mkdirSync, unlinkSync, statSync } from 'fs';
+import { readFileSync, existsSync, mkdirSync, unlinkSync, statSync, writeFileSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 
@@ -135,6 +135,18 @@ db.exec(`
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
   );
   CREATE INDEX IF NOT EXISTS idx_members_bday ON members(birthday);
+  CREATE TABLE IF NOT EXISTS humor_queue (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    source TEXT,
+    source_url TEXT,
+    text TEXT,
+    media_url TEXT,
+    media_path TEXT,
+    media_type TEXT DEFAULT 'image',
+    status TEXT DEFAULT 'pending',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+  CREATE INDEX IF NOT EXISTS idx_humor_status ON humor_queue(status);
 `);
 
 // Migration: add photo_path if missing
@@ -1475,6 +1487,177 @@ app.get('/api/shop', auth, (req, res) => {
   res.json(SHOP_ITEMS);
 });
 
+// ═══════ HUMOR QUEUE ═══════
+const HUMOR_CHANNELS = ['motomoskva_pro', 'moto_tm'];
+const HUMOR_SUBREDDITS = ['motorcycle', 'motorcyclememes', 'CalamariRaceTeam'];
+
+async function scrapeHumorChannels() {
+  console.log('[HUMOR] Scraping TG channels + Reddit');
+  const existing = new Set(db.prepare("SELECT source_url FROM humor_queue").all().map(r => r.source_url));
+  let added = 0;
+
+  // TG channels
+  for (const ch of HUMOR_CHANNELS) {
+    try {
+      const res = await fetch(`https://t.me/s/${ch}`, { signal: AbortSignal.timeout(10000), headers: { 'User-Agent': 'Mozilla/5.0' } });
+      if (!res.ok) { console.log('[HUMOR] TG', ch, 'status', res.status); continue; }
+      const html = await res.text();
+
+      const msgRegex = /data-post="([^"]+)"[\s\S]*?<div class="tgme_widget_message_bubble">([\s\S]*?)<\/div>\s*<\/div>\s*<\/div>/gi;
+      let m;
+      while ((m = msgRegex.exec(html)) !== null && added < 30) {
+        const postId = m[1];
+        const bubble = m[2];
+        const sourceUrl = `https://t.me/${postId}`;
+        if (existing.has(sourceUrl)) continue;
+
+        let mediaUrl = null;
+        let mediaType = 'image';
+        const imgMatch = bubble.match(/background-image:url\('([^']+)'\)/);
+        if (imgMatch) mediaUrl = imgMatch[1];
+        const vidMatch = bubble.match(/<video[^>]+src="([^"]+)"/);
+        if (vidMatch) { mediaUrl = vidMatch[1]; mediaType = 'video'; }
+        if (!mediaUrl) {
+          const photoWrap = bubble.match(/class="tgme_widget_message_photo_wrap"[^>]*style="[^"]*background-image:url\('([^']+)'\)/);
+          if (photoWrap) mediaUrl = photoWrap[1];
+        }
+        if (!mediaUrl) continue;
+
+        let text = '';
+        const textMatch = bubble.match(/<div class="tgme_widget_message_text[^"]*"[^>]*>([\s\S]*?)<\/div>/);
+        if (textMatch) text = textMatch[1].replace(/<br\s*\/?>/g, '\n').replace(/<[^>]*>/g, '').trim();
+
+        db.prepare('INSERT INTO humor_queue (source, source_url, text, media_url, media_type, status) VALUES (?, ?, ?, ?, ?, ?)')
+          .run('tg:' + ch, sourceUrl, text || null, mediaUrl, mediaType, 'pending');
+        existing.add(sourceUrl);
+        added++;
+      }
+      console.log('[HUMOR] TG', ch, 'done');
+    } catch (e) {
+      console.error('[HUMOR] TG', ch, 'error:', e.message);
+    }
+  }
+
+  // Reddit
+  for (const sub of HUMOR_SUBREDDITS) {
+    try {
+      const res = await fetch(`https://www.reddit.com/r/${sub}/hot/.json?limit=25`, {
+        signal: AbortSignal.timeout(10000),
+        headers: { 'User-Agent': 'HardLocalsBot/1.0' }
+      });
+      if (!res.ok) { console.log('[HUMOR] Reddit', sub, 'status', res.status); continue; }
+      const data = await res.json();
+      const posts = data?.data?.children || [];
+
+      for (const post of posts) {
+        const p = post.data;
+        if (!p || p.is_self) continue; // Skip text-only posts
+        const sourceUrl = `https://reddit.com${p.permalink}`;
+        if (existing.has(sourceUrl)) continue;
+
+        let mediaUrl = null;
+        let mediaType = 'image';
+
+        // Image posts
+        if (p.url && p.url.match(/\.(jpg|jpeg|png|gif|webp)(\?.*)?$/i)) {
+          mediaUrl = p.url;
+        }
+        // Reddit hosted image
+        else if (p.url && p.url.includes('i.redd.it')) {
+          mediaUrl = p.url;
+        }
+        // Reddit hosted video
+        else if (p.is_video && p.media?.reddit_video?.fallback_url) {
+          mediaUrl = p.media.reddit_video.fallback_url;
+          mediaType = 'video';
+        }
+        // Imgur
+        else if (p.url && p.url.includes('imgur.com') && !p.url.includes('/a/')) {
+          mediaUrl = p.url.replace(/\/?$/, '.jpg');
+        }
+
+        if (!mediaUrl) continue;
+
+        const text = p.title || '';
+        db.prepare('INSERT INTO humor_queue (source, source_url, text, media_url, media_type, status) VALUES (?, ?, ?, ?, ?, ?)')
+          .run('reddit:' + sub, sourceUrl, text, mediaUrl, mediaType, 'pending');
+        existing.add(sourceUrl);
+        added++;
+        if (added >= 40) break;
+      }
+      console.log('[HUMOR] Reddit', sub, '- done');
+    } catch (e) {
+      console.error('[HUMOR] Reddit', sub, 'error:', e.message);
+    }
+  }
+
+  console.log(`[HUMOR] Added ${added} items to queue`);
+  return added;
+}
+
+// Download media from URL to uploads/
+async function downloadHumorMedia(item) {
+  if (item.media_path) return item.media_path; // Already downloaded
+  if (!item.media_url) return null;
+
+  try {
+    const ext = item.media_type === 'video' ? 'mp4' : 'jpg';
+    const filename = `humor-${item.id}-${Date.now()}.${ext}`;
+    const filePath = join(__dirname, 'uploads', filename);
+
+    const res = await fetch(item.media_url, { signal: AbortSignal.timeout(30000), headers: { 'User-Agent': 'Mozilla/5.0' } });
+    if (!res.ok) return null;
+
+    const buffer = Buffer.from(await res.arrayBuffer());
+    writeFileSync(filePath, buffer);
+
+    const path = `/uploads/${filename}`;
+    db.prepare('UPDATE humor_queue SET media_path = ? WHERE id = ?').run(path, item.id);
+    console.log(`[HUMOR] Downloaded media for #${item.id}: ${Math.round(buffer.length / 1024)}KB`);
+    return path;
+  } catch (e) {
+    console.error(`[HUMOR] Download failed #${item.id}:`, e.message);
+    return null;
+  }
+}
+
+app.get('/api/humor-queue', auth, (req, res) => {
+  const items = db.prepare("SELECT * FROM humor_queue WHERE status = 'pending' ORDER BY created_at DESC LIMIT 50").all();
+  res.json(items);
+});
+
+app.post('/api/humor-queue/refresh', auth, async (req, res) => {
+  const added = await scrapeHumorChannels();
+  res.json({ ok: true, added });
+});
+
+app.post('/api/humor-queue/:id/approve', auth, async (req, res) => {
+  const id = parseInt(req.params.id);
+  const item = db.prepare('SELECT * FROM humor_queue WHERE id = ?').get(id);
+  if (!item) return res.status(404).json({ error: 'Not found' });
+
+  // Download media if not yet
+  const mediaPath = await downloadHumorMedia(item);
+
+  // Find next available humor slot or create one
+  const { scheduled_date, scheduled_time } = req.body;
+  let date = scheduled_date || fmtLocal(new Date());
+  let time = scheduled_time || '12:00';
+
+  // Create scheduled post
+  const caption = item.text || '😏';
+  const r = db.prepare('INSERT INTO scheduled (scheduled_date, scheduled_time, rubric, title, notes, content, media_path, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
+    .run(date, time, 'humor', 'Мото юмор', item.source, caption, mediaPath, 'draft');
+
+  db.prepare("UPDATE humor_queue SET status = 'approved' WHERE id = ?").run(id);
+  res.json({ ok: true, scheduled_id: r.lastInsertRowid });
+});
+
+app.post('/api/humor-queue/:id/reject', auth, (req, res) => {
+  db.prepare("UPDATE humor_queue SET status = 'rejected' WHERE id = ?").run(parseInt(req.params.id));
+  res.json({ ok: true });
+});
+
 // ═══════ HISTORY ═══════
 app.get('/api/posts', auth, (req, res) => {
   const posts = db.prepare('SELECT * FROM posts ORDER BY created_at DESC LIMIT 100').all();
@@ -1547,7 +1730,7 @@ app.get('*', (req, res) => {
 });
 
 app.listen(PORT, '0.0.0.0', () => {
-  console.log(`\n  Hard Locals Content Ops v9.6 (mobile responsive + shop catalog)`);
+  console.log(`\n  Hard Locals Content Ops v10.1 (verified humor sources: TG + Reddit)`);
   console.log(`  → http://0.0.0.0:${PORT}`);
   console.log(`  → Anthropic: ${ANTHROPIC_API_KEY ? '✓' : '✗'}`);
   console.log(`  → TG Bot: ${TG_BOT_TOKEN ? '✓' : '✗'}`);
