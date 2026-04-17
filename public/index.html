@@ -1180,16 +1180,25 @@ apiCall("/api/scheduled/"+pendingDraftId+"/content",{content:text,media_path:med
 if(d.error){toast(d.error,"err");return}
 setPendingDraftId(null);
 toast("Сохранено в очередь","ok");
+loadScheduled();
 });
 }
 
 function scheduleFromEditor(){
+// If editing existing draft, pre-fill its current date/time
+if(pendingDraftId){
+var existing=null;
+for(var i=0;i<scheduled.length;i++){if(scheduled[i].id===pendingDraftId){existing=scheduled[i];break}}
+if(existing){
+setScheduleForm({date:existing.scheduled_date||fmtYMD(new Date()),time:existing.scheduled_time||"10:00"});
+return;
+}
+}
 setScheduleForm({date:fmtYMD(new Date()),time:"10:00"});
 }
 
 function submitScheduleForm(){
 if(!text)return;
-// Read directly from DOM to avoid stale closure
 var dateEl=document.getElementById("sched-date-input");
 var timeEl=document.getElementById("sched-time-input");
 var dateVal=dateEl?dateEl.value:fmtYMD(new Date());
@@ -1197,14 +1206,11 @@ var timeVal=timeEl?timeEl.value:"10:00";
 var mediaPaths=attachedMediaList&&attachedMediaList.length>0?attachedMediaList.map(function(m){return m.path}).join(","):null;
 
 if(pendingDraftId){
-// UPDATE existing draft (change time/date)
-fetch("/api/scheduled/"+pendingDraftId+"/content",{method:"POST",headers:{"Content-Type":"application/json",Authorization:"Bearer "+token},body:JSON.stringify({content:text,media_path:mediaPaths,scheduled_date:dateVal,status:"ready"})}).then(function(r){return r.json()}).then(function(d){
+// UPDATE existing draft
+apiCall("/api/scheduled/"+pendingDraftId+"/content",{content:text,media_path:mediaPaths,scheduled_date:dateVal,scheduled_time:timeVal,status:"ready"},token).then(function(d){
 if(d.error){toast(d.error,"err");return}
-// Also update time
-fetch("/api/scheduled/"+pendingDraftId+"/time",{method:"POST",headers:{"Content-Type":"application/json",Authorization:"Bearer "+token},body:JSON.stringify({scheduled_time:timeVal})}).then(function(){
 toast("Обновлено: "+dateVal+" "+timeVal,"ok");
-setScheduleForm(null);setPendingDraftId(null);
-});
+setScheduleForm(null);setPendingDraftId(null);loadScheduled();
 });
 } else {
 // CREATE new scheduled post
@@ -1212,7 +1218,7 @@ var body={scheduled_date:dateVal,scheduled_time:timeVal,rubric:rub?rub.id:"custo
 fetch("/api/scheduled",{method:"POST",headers:{"Content-Type":"application/json",Authorization:"Bearer "+token},body:JSON.stringify(body)}).then(function(r){return r.json()}).then(function(d){
 if(d.error){toast(d.error,"err");return}
 toast("Запланировано на "+dateVal+" "+timeVal,"ok");
-setScheduleForm(null);
+setScheduleForm(null);loadScheduled();
 });
 }
 }

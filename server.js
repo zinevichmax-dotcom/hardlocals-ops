@@ -1231,9 +1231,12 @@ app.delete('/api/scheduled/:id', auth, (req, res) => {
 // Save generated content back to a scheduled draft (also supports date move for drag-drop)
 app.post('/api/scheduled/:id/content', auth, (req, res) => {
   const id = parseInt(req.params.id);
-  const { content, media_path, scheduled_date, status } = req.body;
+  const { content, media_path, scheduled_date, scheduled_time, status } = req.body;
   if (scheduled_date) {
     db.prepare('UPDATE scheduled SET scheduled_date = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(scheduled_date, id);
+  }
+  if (scheduled_time) {
+    db.prepare('UPDATE scheduled SET scheduled_time = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(scheduled_time, id);
   }
   if (content !== undefined) {
     db.prepare('UPDATE scheduled SET content = ?, media_path = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?')
