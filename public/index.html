@@ -15,7 +15,18 @@
 --text:#F5F1EA;--text-muted:#9A9AA5;--text-dim:#5A5A65;
 --accent:#E85D1F;--accent-glow:rgba(232,93,31,0.25);--accent-dim:#8A3810;
 --info:#4A9EFF;--success:#4ADE80;--danger:#EF4444;--warning:#F59E0B;
+--f-head:'Unbounded',sans-serif;--f-mono:'JetBrains Mono',monospace;
 }
+
+/* Loading skeleton */
+@keyframes shimmer{0%{background-position:-200% 0}100%{background-position:200% 0}}
+.skeleton{height:16px;border-radius:6px;background:linear-gradient(90deg,var(--bg-elev) 25%,var(--bg-hover) 50%,var(--bg-elev) 75%);background-size:200% 100%;animation:shimmer 1.5s infinite}
+
+/* Format toolbar */
+.fmt-bar{display:flex;gap:2px;padding:4px;background:var(--bg);border:1px solid var(--line-soft);border-bottom:none;border-radius:8px 8px 0 0}
+.fmt-btn{padding:4px 10px;font-size:11px;color:var(--text-dim);background:transparent;border:none;border-radius:4px;cursor:pointer;font-family:var(--f-mono);transition:all 0.15s}
+.fmt-btn:hover{background:var(--bg-hover);color:var(--text)}
+.char-count{font-family:var(--f-mono);font-size:10px;color:var(--text-dim);text-align:right;padding:4px 8px}
 html,body{height:100%;background:var(--bg);color:var(--text)}
 body{font-family:'Inter',-apple-system,system-ui,sans-serif;font-size:14px;line-height:1.55;font-weight:400;-webkit-font-smoothing:antialiased;letter-spacing:-0.005em;background-image:radial-gradient(ellipse 80% 50% at 20% 0%,#1A1A22 0%,transparent 60%),radial-gradient(ellipse 60% 50% at 80% 100%,#18181E 0%,transparent 50%);background-attachment:fixed}
 body::before{content:'';position:fixed;inset:0;pointer-events:none;z-index:1;opacity:0.025;background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='200' height='200'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9'/></filter><rect width='100%25' height='100%25' filter='url(%23n)'/></svg>")}
@@ -474,6 +485,16 @@ function toast(msg,type){
 var id=Date.now()+Math.random();
 setToasts(function(prev){return prev.concat([{id:id,msg:msg,type:type||"info"}])});
 setTimeout(function(){setToasts(function(prev){return prev.filter(function(t){return t.id!==id})})},3000);
+}
+
+function wrapSelection(before,after){
+var ta=taR.current;if(!ta)return;
+var start=ta.selectionStart;var end=ta.selectionEnd;
+var val=ta.value;
+var selected=val.substring(start,end)||"текст";
+var newVal=val.substring(0,start)+before+selected+after+val.substring(end);
+setText(newVal);
+setTimeout(function(){ta.focus();ta.selectionStart=start+before.length;ta.selectionEnd=start+before.length+selected.length},0);
 }
 var sel=selS[0],setSel=selS[1];
 var fields=fieldsS[0],setFields=fieldsS[1];
@@ -1836,8 +1857,12 @@ h("button",{onClick:function(){setImgSearch(!imgSearch);setBannerOpen(false);if(
 h("label",{htmlFor:"tools-upload-input",className:"tool-btn",style:{cursor:"pointer"}},"\u{1F4CE} Загрузить",
 h("input",{id:"tools-upload-input",type:"file",multiple:true,accept:"image/*,video/*",style:{display:"none"},onChange:function(e){handleAttachFilesUpload(e.target.files);e.target.value=""}})
 ),
-h("button",{onClick:function(){var url=prompt("Вставь ссылку на видео (YouTube, Rutube, Vimeo, Instagram, TikTok и др.):");if(url)downloadVideoFromUrl(url)},className:"tool-btn",disabled:videoDownloading,title:"Скачать видео по ссылке"},videoDownloading?"\u23F3 Качаю...":"\u{1F517} С URL"),
+h("button",{onClick:function(){var el=document.getElementById("inline-url-dl");if(el){el.style.display=el.style.display==="none"?"flex":"none"}},className:"tool-btn",disabled:videoDownloading,title:"Скачать видео по ссылке"},videoDownloading?"\u23F3 Качаю...":"\u{1F517} С URL"),
 banner?h("span",{className:"tool-badge"},"\u2713 Баннер сгенерирован"):null
+),
+h("div",{id:"inline-url-dl",style:{display:"none",gap:8,marginTop:8}},
+h("input",{id:"url-dl-input",className:"input",placeholder:"Ссылка на видео (YouTube, Instagram, Rutube...)",style:{flex:1},onKeyDown:function(e){if(e.key==="Enter"){var v=e.target.value.trim();if(v)downloadVideoFromUrl(v)}}}),
+h("button",{onClick:function(){var v=document.getElementById("url-dl-input").value.trim();if(v)downloadVideoFromUrl(v)},disabled:videoDownloading,className:"btn-primary accent",style:{padding:"10px 16px",whiteSpace:"nowrap"}},"\u{1F4E5} Скачать")
 ),
 // ATTACHED MEDIA INDICATOR
 attachedMediaList&&attachedMediaList.length>0?h("div",{className:"media-attached-bar"},
@@ -1911,8 +1936,17 @@ h("input",{className:"input",placeholder:fi.ph,value:fields[fi.k]||"",onChange:f
 }),
 h("div",{className:"actions"},
 h("button",{onClick:generate,disabled:loading,className:"btn-primary accent"},loading?"Генерация...":"\u2728 Сгенерировать"),
-text?h("button",{onClick:generate,disabled:loading,className:"btn-secondary"},"\u21BB Ещё вариант"):null
+text?h("button",{onClick:generate,disabled:loading,className:"btn-secondary"},"\u21BB Ещё вариант"):null,
+!loading&&!text?h("span",{style:{fontSize:10,color:"var(--text-dim)"}},"⌘+Enter"):null
 ),
+// LOADING SKELETON
+loading&&!text?h("div",{style:{marginTop:20,padding:20,background:"var(--bg-card)",borderRadius:12,border:"1px solid var(--line-soft)"}},
+h("div",{className:"skeleton",style:{width:"60%",height:18,marginBottom:12}}),
+h("div",{className:"skeleton",style:{width:"100%",height:14,marginBottom:8}}),
+h("div",{className:"skeleton",style:{width:"90%",height:14,marginBottom:8}}),
+h("div",{className:"skeleton",style:{width:"75%",height:14,marginBottom:8}}),
+h("div",{className:"skeleton",style:{width:"40%",height:14}})
+):null,
 // MEME QUEUE (only for humor rubric)
 rub&&rub.id==="humor"?h("div",{style:{marginTop:24,background:"linear-gradient(180deg,var(--bg-card) 0%,var(--bg-elev) 100%)",border:"1px solid var(--line)",borderRadius:14,padding:20}},
 h("div",{style:{fontFamily:"var(--f-head)",fontSize:14,fontWeight:700,marginBottom:4}},"\u{1F602} Мемы и контент"),
@@ -1963,7 +1997,18 @@ attachedMediaList&&attachedMediaList.length>0?h("span",{className:"tool-badge"},
 h("button",{onClick:function(){setSaveTemplateOpen(true)},className:"btn-ghost",style:{padding:"5px 10px",fontSize:10}},"\u{1F4BE} Сохранить как шаблон")
 )
 ),
-h("div",{className:"result-body"},h("textarea",{ref:taR,value:text,onChange:function(ev){setText(ev.target.value)},className:"result-textarea"})),
+h("div",{className:"result-body"},
+h("div",{className:"fmt-bar"},
+h("button",{className:"fmt-btn",onClick:function(){wrapSelection("<b>","</b>")},title:"Жирный (⌘B)"},h("b",null,"B")),
+h("button",{className:"fmt-btn",onClick:function(){wrapSelection("<i>","</i>")},title:"Курсив"},h("i",null,"I")),
+h("button",{className:"fmt-btn",onClick:function(){wrapSelection("<s>","</s>")},title:"Зачёркнутый"},h("s",null,"S")),
+h("button",{className:"fmt-btn",onClick:function(){wrapSelection("<code>","</code>")},title:"Код"},"<>"),
+h("button",{className:"fmt-btn",onClick:function(){var url=prompt("URL ссылки:");if(url)wrapSelection('<a href="'+url+'">','</a>')},title:"Ссылка"},"\u{1F517}"),
+h("button",{className:"fmt-btn",onClick:function(){wrapSelection("<tg-spoiler>","</tg-spoiler>")},title:"Спойлер"},"\u{1F648}")
+),
+h("textarea",{ref:taR,value:text,onChange:function(ev){setText(ev.target.value)},className:"result-textarea",style:{borderRadius:"0 0 8px 8px",borderTop:"none"}}),
+h("div",{className:"char-count"},text.length+" символов")
+),
 blocks?h("div",{className:"panel",style:{margin:"0 22px 16px"}},
 h("div",{className:"panel-head"},rub&&rub.id==="moto_news"?"\u{1F9F1} Редактор блоков · Проверь гиперссылки":"\u{1F9F1} Редактор блоков ("+blocks.items.length+")"),
 h("div",{className:"panel-body"},
