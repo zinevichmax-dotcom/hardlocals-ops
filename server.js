@@ -3,7 +3,7 @@ import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
 import Database from 'better-sqlite3';
 import multer from 'multer';
-import { readFileSync, existsSync, mkdirSync, unlinkSync, statSync, writeFileSync } from 'fs';
+import { readFileSync, existsSync, mkdirSync, unlinkSync, statSync, writeFileSync, readdirSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 
@@ -310,6 +310,92 @@ async function runScheduler() {
 setInterval(runScheduler, 5 * 60 * 1000);
 // Also run once on startup after 30 seconds
 setTimeout(runScheduler, 30 * 1000);
+
+// ═══════ DAILY DIGEST (08:00 notification) ═══════
+let lastDigestDate = '';
+
+async function sendDailyDigest() {
+  if (!NOTIFY_CHAT_ID || !TG_BOT_TOKEN) return;
+  const now = new Date();
+  const todayStr = fmtLocal(now);
+  const hour = now.getHours();
+  const minute = now.getMinutes();
+
+  // Only send between 08:00-08:09, once per day
+  if (hour !== 8 || minute >= 10) return;
+  if (lastDigestDate === todayStr) return;
+  lastDigestDate = todayStr;
+
+  const todayPosts = db.prepare("SELECT * FROM scheduled WHERE scheduled_date = ? AND status = 'ready' ORDER BY scheduled_time").all(todayStr);
+  const totalReady = db.prepare("SELECT COUNT(*) as n FROM scheduled WHERE status = 'ready'").get()?.n || 0;
+  const totalDrafts = db.prepare("SELECT COUNT(*) as n FROM scheduled WHERE status = 'draft'").get()?.n || 0;
+  const emptyDrafts = db.prepare("SELECT COUNT(*) as n FROM scheduled WHERE status = 'draft' AND (content IS NULL OR content = '')").get()?.n || 0;
+
+  // Find rubric icons
+  const rubricIcons = { moto_news: '📰', humor: '😏', kind_reminder: '🛡', cross_promo: '📱', merch: '🧢', riddle: '🎭', birthday: '🎂', values: '💎', route_series: '🗺', trip_announce: '🏕', season_calendar: '📅', season_opening: '⚡', trip_digest: '📸', custom: '✏️' };
+
+  let msg = `📋 План на ${todayStr}:\n`;
+  if (todayPosts.length === 0) {
+    msg += 'Нет постов в очереди на сегодня.\n';
+  } else {
+    for (const p of todayPosts) {
+      const icon = rubricIcons[p.rubric] || '📌';
+      msg += `${p.scheduled_time} — ${icon} ${p.title || p.rubric}\n`;
+    }
+  }
+  msg += `\n📊 Всего: ${totalReady} в очереди, ${totalDrafts} черновиков`;
+  if (emptyDrafts > 0) msg += ` (${emptyDrafts} без текста)`;
+
+  // Check upcoming birthdays
+  const members = db.prepare('SELECT * FROM members WHERE birthday IS NOT NULL').all();
+  const todayMD = (now.getMonth() + 1).toString().padStart(2, '0') + '-' + now.getDate().toString().padStart(2, '0');
+  const bdayToday = members.filter(m => m.birthday && m.birthday.slice(5) === todayMD);
+  if (bdayToday.length > 0) {
+    msg += '\n\n🎂 Дни рождения сегодня: ' + bdayToday.map(m => m.name || m.nickname).join(', ');
+  }
+
+  try {
+    const apiBase = `${TG_LOCAL_API}/bot${TG_BOT_TOKEN}`;
+    await fetch(`${apiBase}/sendMessage`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ chat_id: NOTIFY_CHAT_ID, text: msg }),
+    });
+    console.log('[DIGEST] Sent daily digest');
+  } catch (e) {
+    console.error('[DIGEST] Error:', e.message);
+  }
+}
+
+// Check for digest every 5 minutes (same interval as scheduler)
+setInterval(sendDailyDigest, 5 * 60 * 1000);
+setTimeout(sendDailyDigest, 60 * 1000);
+
+// ═══════ AUTO-BACKUP (daily) ═══════
+let lastBackupDate = '';
+function autoBackup() {
+  const todayStr = fmtLocal(new Date());
+  if (lastBackupDate === todayStr) return;
+  lastBackupDate = todayStr;
+  try {
+    const src = join(__dirname, 'data', 'ops.db');
+    const dst = join(__dirname, 'data', `ops-backup-${todayStr}.db`);
+    if (existsSync(src)) {
+      db.backup(dst).then(() => {
+        console.log(`[BACKUP] ${dst}`);
+        // Clean old backups (keep last 7)
+        const files = readdirSync(join(__dirname, 'data'))
+          .filter(f => f.startsWith('ops-backup-') && f.endsWith('.db'))
+          .sort().reverse();
+        files.slice(7).forEach(f => {
+          try { unlinkSync(join(__dirname, 'data', f)); } catch {}
+        });
+      }).catch(e => console.error('[BACKUP] Error:', e.message));
+    }
+  } catch (e) { console.error('[BACKUP] Error:', e.message); }
+}
+setInterval(autoBackup, 60 * 60 * 1000); // Every hour
+setTimeout(autoBackup, 5 * 60 * 1000); // 5 min after start
 
 const adminExists = db.prepare('SELECT id FROM users WHERE username = ?').get(ADMIN_USER);
 if (!adminExists) {
@@ -1857,7 +1943,7 @@ app.get('*', (req, res) => {
 });
 
 app.listen(PORT, '0.0.0.0', () => {
-  console.log(`\n  Hard Locals Content Ops v11.1 (TG preview bubble + notifications + strikethrough)`);
+  console.log(`\n  Hard Locals Content Ops v11.2 (daily digest + auto-backup + TG preview)`);
   console.log(`  → http://0.0.0.0:${PORT}`);
   console.log(`  → Anthropic: ${ANTHROPIC_API_KEY ? '✓' : '✗'}`);
   console.log(`  → TG Bot: ${TG_BOT_TOKEN ? '✓' : '✗'}`);
