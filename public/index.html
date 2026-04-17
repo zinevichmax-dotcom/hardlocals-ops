@@ -672,7 +672,7 @@ var fmt=function(d){var m=d.getMonth()+1;var dd=d.getDate();return d.getFullYear
 fetch("/api/scheduled?from="+fmt(start)+"&to="+fmt(end),{headers:{Authorization:"Bearer "+token}}).then(function(r){return r.json()}).then(function(d){setScheduled(Array.isArray(d)?d:[])});
 }
 
-function openCalendar(){setCalendarOpen(true);loadScheduled()}
+function openCalendar(){setCalendarOpen(true);setScheduledEdit(null);loadScheduled()}
 
 function saveScheduled(item){
 var url=item.id?"/api/scheduled/"+item.id:"/api/scheduled";
@@ -882,7 +882,22 @@ return t;
 
 function generate(){
 if(!rub)return;setLoading(true);setError("");
-var body={model:"claude-sonnet-4-20250514",max_tokens:1000,system:SYSTEM,messages:[{role:"user",content:rub.pr(fields)}]};
+
+// Build message content
+var userContent=rub.pr(fields);
+
+// If humor rubric and image attached, include image for AI vision
+if(rub.id==="humor"&&attachedMediaList&&attachedMediaList.length>0){
+var imgUrl=attachedMediaList[0].preview||attachedMediaList[0].path;
+if(imgUrl&&imgUrl.startsWith("http")){
+userContent=[
+{type:"image",source:{type:"url",url:imgUrl}},
+{type:"text",text:"Посмотри на этот мем/картинку и напиши короткую смешную подпись к нему для Telegram-канала мотоклуба Hard Locals. На русском. 1-2 предложения. Стиль — как между своими. Без хэштегов."}
+];
+}
+}
+
+var body={model:"claude-sonnet-4-20250514",max_tokens:1000,system:SYSTEM,messages:[{role:"user",content:userContent}]};
 if(rub.ws)body.tools=[{type:"web_search_20250305",name:"web_search"}];
 apiCall("/api/generate",body,token).then(function(data){
 if(data.error){setError(String(data.error.message||data.error));setLoading(false);return}
@@ -1709,7 +1724,7 @@ h("div",{className:"header"},
 h("div",{className:"header-left"},
 h("button",{onClick:function(){setSidebar(!sidebar)},className:"menu-btn"},"\u2630"),
 h("div",{className:"brand"},h("span",{className:"brand-name"},"HARD LOCALS"),h("span",{className:"brand-sub"},"Content Operations")),
-sel?h("button",{onClick:function(){setSel(null);setText("");setFields({});setBlocks(null);setBanner(null);setBannerOpen(false);setImgSearch(false);setAttachedMediaList([])},className:"header-btn",style:{marginLeft:16}},"\u2190 Главная"):null
+sel?h("button",{onClick:function(){setSel(null);setText("");setFields({});setBlocks(null);setBanner(null);setBannerOpen(false);setImgSearch(false);setAttachedMediaList([]);setScheduledEdit(null);setPendingDraftId(null);setScheduleForm(null);setMediaBankOpen(false)},className:"header-btn",style:{marginLeft:16}},"\u2190 Главная"):null
 ),
 h("div",{className:"header-right"},
 h("button",{onClick:openCalendar,className:"header-btn"},"\u{1F4C5} Календарь"),
